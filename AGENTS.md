@@ -5,7 +5,7 @@
 **Branch:** master
 
 ## OVERVIEW
-Maven Java 25 CLI for "AIAdventChallenge" (`ru.lemanapro:AIAdventChallenge:1.0-SNAPSHOT`). Currently a minimal LLM chat client: sends a prompt to an OpenAI-compatible `/chat/completions` endpoint, prints the reply.
+Maven Java 25 CLI for "AIAdventChallenge" (`ru.lemanapro:AIAdventChallenge:1.0-SNAPSHOT`). Advent-task demo: sends the same question to an OpenAI-compatible `/chat/completions` endpoint twice — bare (no constraints) vs controlled (format instruction + `max_tokens` + `stop` sequence) — and prints both answers with a comparison.
 
 ## STRUCTURE
 ```
@@ -27,7 +27,7 @@ AIAdventChallenge/
 ## CONVENTIONS
 - Maven build, not Gradle. Java 25 both source and target (Corretto 25 is the default `java`).
 - LLM calls go through JDK `java.net.http.HttpClient` — no HTTP client library; Jackson only for JSON.
-- LLM config via env, all overridable: `HINDSIGHT_API_LLM_PROVIDER` (must be `openai`), `HINDSIGHT_API_LLM_BASE_URL` (default `https://gpustack.data.lmru.tech/v1`), `HINDSIGHT_API_LLM_MODEL` (default `qwen3.6-27b`), key via `HINDSIGHT_API_LLM_API_KEY` or `OPENAI_API_KEY` (gpustack server requires auth).
+- LLM config via env, all overridable: `HINDSIGHT_API_LLM_PROVIDER` (must be `openai`), `HINDSIGHT_API_LLM_BASE_URL` (default `https://gpustack.data.lmru.tech/v1`), `HINDSIGHT_API_LLM_MODEL` (default `qwen3.6-27b`), key via `LLM_API_KEY` (user's canonical name — no fallbacks; gpustack server requires auth).
 - IntelliJ project (`.idea/`); `.mvn/wrapper` referenced in `.gitignore` but no wrapper present.
 
 ## ANTI-PATTERNS (THIS PROJECT)
@@ -38,8 +38,8 @@ AIAdventChallenge/
 ## COMMANDS
 ```bash
 mvn compile
-mvn -q exec:java                                    # default prompt
-mvn -q exec:java -Dexec.args="Your question here"   # custom prompt
+mvn -q exec:java                                   # default question, runs both variants
+mvn -q exec:java -Dexec.args="Ваш вопрос"          # custom question (used for both runs)
 # point at any OpenAI-compatible server:
 HINDSIGHT_API_LLM_BASE_URL=http://localhost:11434/v1 HINDSIGHT_API_LLM_MODEL=llama3 mvn -q exec:java
 ```
