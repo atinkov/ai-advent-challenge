@@ -35,4 +35,55 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- mvn -q exec:java -Ptask1 -->
+        <profile>
+            <id>task1</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.Task1</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- mvn -q exec:java -Ptask2 -->
+        <profile>
+            <id>task2</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.Task2</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- mvn -q exec:java -Ptask3 -->
+        <profile>
+            <id>task3</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.Task3</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>
