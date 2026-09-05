@@ -113,7 +113,20 @@ public final class LlmClient {
         return response.path("choices").path(0).path("finish_reason").asText("?");
     }
 
-    private static String env(String name, String defaultValue) {
+    /** Token usage reported by the API. A value of -1 means the field was absent. */
+    public record Usage(int promptTokens, int completionTokens, int totalTokens) {
+    }
+
+    /** Reads `usage` from the API response (-1 for fields the server did not return). */
+    public static Usage usage(JsonNode response) {
+        var u = response.path("usage");
+        return new Usage(
+                u.path("prompt_tokens").asInt(-1),
+                u.path("completion_tokens").asInt(-1),
+                u.path("total_tokens").asInt(-1));
+    }
+
+    public static String env(String name, String defaultValue) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? defaultValue : value;
     }
