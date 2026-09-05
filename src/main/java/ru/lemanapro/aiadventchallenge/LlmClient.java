@@ -60,6 +60,18 @@ public final class LlmClient {
      */
     public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
                                 Integer maxTokens, List<String> stop) throws Exception {
+        return chat(client, cfg, messages, maxTokens, stop, null);
+    }
+
+    /**
+     * Sends one chat completion request.
+     *
+     * @param maxTokens   optional max_tokens API parameter (null = no limit)
+     * @param stop        optional stop sequences (null = none)
+     * @param temperature optional sampling temperature (null = server default)
+     */
+    public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
+                                Integer maxTokens, List<String> stop, Double temperature) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.model());
         body.put("messages", messages);
@@ -68,6 +80,9 @@ public final class LlmClient {
         }
         if (stop != null) {
             body.put("stop", stop);
+        }
+        if (temperature != null) {
+            body.put("temperature", temperature);
         }
 
         HttpRequest request = HttpRequest.newBuilder()

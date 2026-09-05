@@ -17,7 +17,8 @@ AIAdventChallenge/
 │   ├── Main.java            # INTENTIONAL empty stub (user's choice) — not a day class; do not "restore" it
 │   ├── Task1.java           # day 1: minimal single LLM call
 │   ├── Task2.java           # day 2: same task bare vs controlled (format+max_tokens+stop)
-│   └── Task3.java           # day 3: same task 4 reasoning ways + comparison
+│   ├── Task3.java           # day 3: same task 4 reasoning ways + comparison
+│   └── Task4.java           # day 4: same request at temperature 0/0.7/1.2 (3 runs each) + comparison
 ├── src/main/resources/      # empty
 └── src/test/java/           # empty
 ```
@@ -30,6 +31,7 @@ AIAdventChallenge/
 | Day 1 (minimal call) | `Task1.java` | run with `-Ptask1` |
 | Day 2 (response control) | `Task2.java` | run with `-Ptask2` |
 | Day 3 (reasoning ways) | `Task3.java` | run with `-Ptask3` |
+| Day 4 (temperature) | `Task4.java` | run with `-Ptask4`; needs `temperature` param → 6-arg `LlmClient.chat` |
 | New advent day | new `TaskN.java` + matching `<profile>` in `pom.xml` | package root `ru.lemanapro.aiadventchallenge` is the convention |
 | New test | `src/test/java/` | No test framework declared yet |
 
@@ -50,6 +52,7 @@ mvn compile
 mvn -q exec:java -Ptask1                           # day 1 (Task1): minimal call
 mvn -q exec:java -Ptask2                           # day 2 (Task2): bare vs controlled
 mvn -q exec:java -Ptask3                           # day 3 (Task3): 4 reasoning ways
+mvn -q exec:java -Ptask4                           # day 4 (Task4): temperature 0/0.7/1.2
 mvn -q exec:java -PtaskN -Dexec.args="Ваш вопрос"  # custom question/task for that day
 # point at any OpenAI-compatible server:
 HINDSIGHT_API_LLM_BASE_URL=http://localhost:11434/v1 HINDSIGHT_API_LLM_MODEL=llama3 mvn -q exec:java -Ptask3

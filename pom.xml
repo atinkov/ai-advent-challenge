@@ -68,6 +68,22 @@
                 </plugins>
             </build>
         </profile>
+        <!-- mvn -q exec:java -Ptask4 -->
+        <profile>
+            <id>task4</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.Task4</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- mvn -q exec:java -Ptask3 -->
         <profile>
             <id>task3</id>
