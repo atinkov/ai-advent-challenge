@@ -46,7 +46,7 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <version>3.5.0</version>
                         <configuration>
-                            <mainClass>ru.lemanapro.aiadventchallenge.Task1</mainClass>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week1.Task1</mainClass>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -62,7 +62,7 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <version>3.5.0</version>
                         <configuration>
-                            <mainClass>ru.lemanapro.aiadventchallenge.Task2</mainClass>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week1.Task2</mainClass>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -78,7 +78,7 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <version>3.5.0</version>
                         <configuration>
-                            <mainClass>ru.lemanapro.aiadventchallenge.Task4</mainClass>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week1.Task4</mainClass>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -94,7 +94,7 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <version>3.5.0</version>
                         <configuration>
-                            <mainClass>ru.lemanapro.aiadventchallenge.Task3</mainClass>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week1.Task3</mainClass>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -110,7 +110,23 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <version>3.5.0</version>
                         <configuration>
-                            <mainClass>ru.lemanapro.aiadventchallenge.Task5</mainClass>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week1.Task5</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- mvn -q exec:java -Ptask6 -->
+        <profile>
+            <id>task6</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week2.Task6</mainClass>
                         </configuration>
                     </plugin>
                 </plugins>
