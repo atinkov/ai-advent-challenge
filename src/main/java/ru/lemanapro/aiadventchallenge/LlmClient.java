@@ -113,6 +113,14 @@ public final class LlmClient {
         return Map.of("role", role, "content", content);
     }
 
+    public static String toJson(Object value) throws Exception {
+        return MAPPER.writeValueAsString(value);
+    }
+
+    public static JsonNode parseJson(String text) throws Exception {
+        return MAPPER.readTree(text);
+    }
+
     public static String content(JsonNode response) {
         return response.path("choices").path(0).path("message").path("content").asText();
     }
