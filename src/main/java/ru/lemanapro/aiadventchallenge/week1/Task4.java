@@ -1,6 +1,7 @@
-package ru.lemanapro.aiadventchallenge;
+package ru.lemanapro.aiadventchallenge.week1;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import ru.lemanapro.aiadventchallenge.LlmClient;
 
 import java.net.http.HttpClient;
 import java.util.HashSet;

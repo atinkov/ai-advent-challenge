@@ -1,6 +1,7 @@
-package ru.lemanapro.aiadventchallenge;
+package ru.lemanapro.aiadventchallenge.week1;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import ru.lemanapro.aiadventchallenge.LlmClient;
 
 import java.net.http.HttpClient;
 import java.util.List;
@@ -20,8 +21,8 @@ import java.util.List;
  * auto-correctness check.
  *
  * Usage:
- *   mvn -q exec:java -Dexec.mainClass=ru.lemanapro.aiadventchallenge.Task3
- *   mvn -q exec:java -Dexec.mainClass=ru.lemanapro.aiadventchallenge.Task3 -Dexec.args="Ваша задача"
+ *   mvn -q exec:java -Dexec.mainClass=ru.lemanapro.aiadventchallenge.week1.Task3
+ *   mvn -q exec:java -Dexec.mainClass=ru.lemanapro.aiadventchallenge.week1.Task3 -Dexec.args="Ваша задача"
  */
 public final class Task3 {
 
