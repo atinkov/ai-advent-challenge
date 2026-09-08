@@ -11,6 +11,7 @@ Maven Java 25 CLI for "AIAdventChallenge" (`ru.lemanapro:AIAdventChallenge:1.0-S
 ```
 AIAdventChallenge/
 ├── pom.xml                  # Java 25, UTF-8; jackson-databind; exec-maven-plugin + per-task profiles
+├── .env                     # LLM config incl. API key (gitignored; loaded by LlmClient)
 ├── .mvn/                    # empty (no Maven wrapper)
 ├── src/main/java/ru/lemanapro/aiadventchallenge/
 │   ├── LlmClient.java       # shared: env config + chat() + content/finishReason/usage helpers (use this, don't duplicate)
@@ -47,13 +48,13 @@ AIAdventChallenge/
 ## CONVENTIONS
 - Maven build, not Gradle. Java 25 both source and target (Corretto 25 is the default `java`).
 - LLM calls go through JDK `java.net.http.HttpClient` — no HTTP client library; Jackson only for JSON.
-- LLM config via env, all overridable: `HINDSIGHT_API_LLM_PROVIDER` (must be `openai`), `HINDSIGHT_API_LLM_BASE_URL` (default `https://gpustack.data.lmru.tech/v1`), `HINDSIGHT_API_LLM_MODEL` (default `qwen3.8-27b` — `qwen3.6-27b` 404s on the server), key via `LLM_API_KEY` (user's canonical name — no fallbacks; gpustack server requires auth).
+- LLM config resolution: process env > `.env` file (repo root, gitignored, parsed by `LlmClient` — no extra deps) > built-in defaults. Names: `HINDSIGHT_API_LLM_PROVIDER` (must be `openai`), `HINDSIGHT_API_LLM_BASE_URL` (default `https://gpustack.data.lmru.tech/v1`), `HINDSIGHT_API_LLM_MODEL` (default `qwen3.8-27b` — `qwen3.6-27b` 404s on the server), key `LLM_API_KEY` (user's canonical name — no fallbacks; gpustack server requires auth).
 - IntelliJ project (`.idea/`); `.mvn/wrapper` referenced in `.gitignore` but no wrapper present.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 - Do not commit `.idea/` or `.omo/` (IDE/agent state) — `.gitignore` only excludes some `.idea` entries.
 - No `mvnw` wrapper: do not assume `./mvnw` works; use `mvn` (verify install).
-- Do not hardcode API keys in code or commit them — env vars only.
+- Do not hardcode API keys in code or commit them — process env or the gitignored `.env` only.
 
 ## COMMANDS
 ```bash

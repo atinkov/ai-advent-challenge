@@ -3,10 +3,14 @@ package ru.lemanapro.aiadventchallenge;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +24,9 @@ import java.util.Map;
  *   HINDSIGHT_API_LLM_BASE_URL   https://gpustack.data.lmru.tech/v1
  *   HINDSIGHT_API_LLM_MODEL      qwen3.8-27b
  *   LLM_API_KEY                  auth key
+ *
+ * Values are resolved in this order: process environment, then the .env file
+ * in the working directory, then the defaults above.
  */
 public final class LlmClient {
 
@@ -27,6 +34,7 @@ public final class LlmClient {
     public static final String DEFAULT_MODEL = "qwen3.8-27b";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Map<String, String> DOTENV = loadDotenv(Path.of(".env"));
 
     public record Config(String apiKey, String baseUrl, String model) {
     }
@@ -41,9 +49,9 @@ public final class LlmClient {
             System.err.println("ERROR: only provider 'openai' (OpenAI-compatible) is supported, got '" + provider + "'.");
             System.exit(2);
         }
-        String apiKey = System.getenv("LLM_API_KEY");
-        if (apiKey == null || apiKey.isBlank()) {
-            System.err.println("ERROR: no API key. Set LLM_API_KEY.");
+        String apiKey = lookup("LLM_API_KEY");
+        if (apiKey == null) {
+            System.err.println("ERROR: no API key. Set LLM_API_KEY (process env or .env).");
             System.exit(2);
         }
         return new Config(
@@ -127,7 +135,48 @@ public final class LlmClient {
     }
 
     public static String env(String name, String defaultValue) {
+        String value = lookup(name);
+        return value == null ? defaultValue : value;
+    }
+
+    /** Resolution order: process env, then .env, else null. */
+    private static String lookup(String name) {
         String value = System.getenv(name);
-        return value == null || value.isBlank() ? defaultValue : value;
+        if (value != null && !value.isBlank()) {
+            return value;
+        }
+        String fromFile = DOTENV.get(name);
+        return fromFile == null || fromFile.isBlank() ? null : fromFile;
+    }
+
+    /** Parses KEY=value lines; skips blanks/# comments; strips one pair of surrounding quotes. */
+    private static Map<String, String> loadDotenv(Path path) {
+        if (!Files.isRegularFile(path)) {
+            return Map.of();
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        try {
+            for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+                int idx = trimmed.indexOf('=');
+                if (idx <= 0) {
+                    continue;
+                }
+                String key = trimmed.substring(0, idx).trim();
+                String value = trimmed.substring(idx + 1).trim();
+                if (value.length() >= 2
+                        && ((value.startsWith("\"") && value.endsWith("\""))
+                        || (value.startsWith("'") && value.endsWith("'")))) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                values.put(key, value);
+            }
+        } catch (IOException e) {
+            System.err.println("ERROR: cannot read " + path + ": " + e.getMessage());
+        }
+        return values;
     }
 }
