@@ -39,3 +39,5 @@ build/
 .DS_Store
 /.env
 /agent-context.json
+/task9-off.json
+/task9-on.json
