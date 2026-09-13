@@ -16,6 +16,11 @@ import java.nio.charset.StandardCharsets;
  * Day 7: the agent persists its dialogue to agent-context.json (override with
  * AGENT_CONTEXT_FILE), so a restarted process continues the same conversation.
  *
+ * Day 8: after every answer the UI prints a token line — exact request/response
+ * counts from the API usage, a local estimate of the stored history, and the
+ * session total. A request rejected by the server (e.g. context overflow) is
+ * reported and the dialogue continues.
+ *
  * Usage:
  *   mvn -q exec:java -Ptask6                           (interactive: exit - quit, reset - clear history)
  *   mvn -q exec:java -Ptask6 -Dexec.args="Ваш вопрос"  (single question, then exit)
@@ -32,6 +37,11 @@ public final class Task6 {
         System.out.println("Агент запущен (модель: " + cfg.model() + " @ " + cfg.baseUrl() + ")");
         if (agent.turnCount() > 0) {
             System.out.println("Контекст восстановлен: " + turnsLabel(agent.turnCount()) + ".");
+            if (agent.sessionPromptTokens() > 0 || agent.sessionCompletionTokens() > 0) {
+                System.out.println("Токены сессии: запрос=" + agent.sessionPromptTokens()
+                        + " | ответ=" + agent.sessionCompletionTokens()
+                        + " | пик запроса=" + agent.maxPromptTokens());
+            }
         }
 
         if (args.length > 0) {
@@ -79,9 +89,31 @@ public final class Task6 {
     private static void printExchange(LlmAgent agent, String question) {
         try {
             String answer = agent.ask(question);
+            if (answer == null) {
+                System.out.println("Агент: запрос отклонён сервером, диалог не изменён. "
+                        + "История может превышать лимит модели — попробуйте 'reset' или более короткое сообщение.");
+                return;
+            }
             System.out.println("Агент: " + answer);
+            System.out.println(tokenLine(agent));
         } catch (Exception e) {
             System.err.println("Агент: запрос не удался: " + e.getMessage());
         }
+    }
+
+    private static String tokenLine(LlmAgent agent) {
+        LlmClient.Usage usage = agent.lastUsage();
+        if (usage == null) {
+            return "[токены: ?]";
+        }
+        return "[токены: запрос=" + tokenValue(usage.promptTokens())
+                + " | ответ=" + tokenValue(usage.completionTokens())
+                + " | история≈" + agent.historyTokensEstimate()
+                + " | сессия=" + (agent.sessionPromptTokens() + agent.sessionCompletionTokens())
+                + "]";
+    }
+
+    private static String tokenValue(int tokens) {
+        return tokens < 0 ? "?" : String.valueOf(tokens);
     }
 }

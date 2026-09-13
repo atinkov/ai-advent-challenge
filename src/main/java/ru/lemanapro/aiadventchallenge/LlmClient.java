@@ -60,25 +60,34 @@ public final class LlmClient {
                 env("HINDSIGHT_API_LLM_MODEL", DEFAULT_MODEL));
     }
 
-    /**
-     * Sends one chat completion request.
-     *
-     * @param maxTokens optional max_tokens API parameter (null = no limit)
-     * @param stop      optional stop sequences (null = none)
-     */
-    public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
-                                Integer maxTokens, List<String> stop) throws Exception {
-        return chat(client, cfg, messages, maxTokens, stop, null);
+    /** Thrown when the API returns a non-200 status. */
+    public static final class RequestException extends Exception {
+        private final int status;
+        private final String body;
+
+        RequestException(int status, String body) {
+            super("HTTP " + status);
+            this.status = status;
+            this.body = body;
+        }
+
+        public int status() {
+            return status;
+        }
+
+        public String body() {
+            return body;
+        }
     }
 
     /**
-     * Sends one chat completion request.
+     * Sends one chat completion request; throws RequestException on a non-200 status.
      *
      * @param maxTokens   optional max_tokens API parameter (null = no limit)
      * @param stop        optional stop sequences (null = none)
      * @param temperature optional sampling temperature (null = server default)
      */
-    public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
+    public static JsonNode send(HttpClient client, Config cfg, List<Map<String, String>> messages,
                                 Integer maxTokens, List<String> stop, Double temperature) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.model());
@@ -103,10 +112,31 @@ public final class LlmClient {
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            System.err.println("HTTP " + response.statusCode() + ":\n" + response.body());
-            System.exit(1);
+            throw new RequestException(response.statusCode(), response.body());
         }
         return MAPPER.readTree(response.body());
+    }
+
+    /** Sends one request; on a non-200 status prints the error and exits (day-class behavior). */
+    public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
+                                Integer maxTokens, List<String> stop) throws Exception {
+        return chat(client, cfg, messages, maxTokens, stop, null);
+    }
+
+    public static JsonNode chat(HttpClient client, Config cfg, List<Map<String, String>> messages,
+                                Integer maxTokens, List<String> stop, Double temperature) throws Exception {
+        try {
+            return send(client, cfg, messages, maxTokens, stop, temperature);
+        } catch (RequestException e) {
+            System.err.println("HTTP " + e.status() + ":\n" + e.body());
+            System.exit(1);
+            throw e;
+        }
+    }
+
+    /** Rough local estimate (chars / 2.5) — for display only; the exact count comes from the API usage. */
+    public static int estimateTokens(String text) {
+        return Math.max(1, (int) Math.ceil(text.length() / 2.5));
     }
 
     public static Map<String, String> message(String role, String content) {
