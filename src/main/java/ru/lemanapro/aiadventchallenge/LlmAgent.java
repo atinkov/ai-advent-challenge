@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,6 +22,12 @@ import java.util.Map;
  * Day 7: the history is persisted to a JSON file (agent-context.json, override
  * with AGENT_CONTEXT_FILE) after every turn and restored on construction, so the
  * dialogue continues across restarts as if the agent never stopped.
+ *
+ * Day 8: token accounting. Exact per-request counts come from the API usage
+ * field (prompt = the whole request, completion = the model answer); session
+ * totals and the peak request size are tracked and persisted in the context
+ * file. A rejected request (e.g. context overflow) returns null without
+ * changing the dialogue.
  */
 public final class LlmAgent {
 
@@ -33,6 +40,11 @@ public final class LlmAgent {
     private final Path contextFile;
     private final List<Map<String, String>> history = new ArrayList<>();
 
+    private int sessionPromptTokens;
+    private int sessionCompletionTokens;
+    private int maxPromptTokens;
+    private LlmClient.Usage lastUsage;
+
     public LlmAgent(LlmClient.Config config) {
         this.config = config;
         this.http = HttpClient.newHttpClient();
@@ -42,11 +54,26 @@ public final class LlmAgent {
         }
     }
 
+    /** Returns the model answer, or null if the server rejected the request (dialogue unchanged). */
     public String ask(String userMessage) throws Exception {
         history.add(LlmClient.message("user", userMessage));
-        JsonNode response = LlmClient.chat(http, config, List.copyOf(history), null, null);
+        JsonNode response;
+        try {
+            response = LlmClient.send(http, config, List.copyOf(history), null, null, null);
+        } catch (LlmClient.RequestException e) {
+            System.err.println("Ошибка: сервер отклонил запрос (HTTP " + e.status() + "):\n" + e.body());
+            return null;
+        }
         String answer = LlmClient.content(response);
         history.add(LlmClient.message("assistant", answer));
+        lastUsage = LlmClient.usage(response);
+        if (lastUsage.promptTokens() > 0) {
+            sessionPromptTokens += lastUsage.promptTokens();
+            maxPromptTokens = Math.max(maxPromptTokens, lastUsage.promptTokens());
+        }
+        if (lastUsage.completionTokens() > 0) {
+            sessionCompletionTokens += lastUsage.completionTokens();
+        }
         save();
         return answer;
     }
@@ -54,11 +81,39 @@ public final class LlmAgent {
     public void reset() {
         history.clear();
         history.add(LlmClient.message("system", SYSTEM_PROMPT));
+        sessionPromptTokens = 0;
+        sessionCompletionTokens = 0;
+        maxPromptTokens = 0;
+        lastUsage = null;
         save();
     }
 
     public int turnCount() {
         return (history.size() - 1) / 2;
+    }
+
+    public LlmClient.Usage lastUsage() {
+        return lastUsage;
+    }
+
+    public int sessionPromptTokens() {
+        return sessionPromptTokens;
+    }
+
+    public int sessionCompletionTokens() {
+        return sessionCompletionTokens;
+    }
+
+    public int maxPromptTokens() {
+        return maxPromptTokens;
+    }
+
+    public int historyTokensEstimate() {
+        int tokens = 0;
+        for (Map<String, String> message : history) {
+            tokens += LlmClient.estimateTokens(message.get("content"));
+        }
+        return tokens;
     }
 
     private boolean load() {
@@ -67,11 +122,13 @@ public final class LlmAgent {
         }
         try {
             JsonNode root = LlmClient.parseJson(Files.readString(contextFile, StandardCharsets.UTF_8));
-            if (!root.isArray() || root.isEmpty()) {
+            JsonNode historyNode = root.isArray() ? root : root.path("history");
+            JsonNode statsNode = root.isObject() ? root.path("stats") : null;
+            if (!historyNode.isArray() || historyNode.isEmpty()) {
                 return false;
             }
             List<Map<String, String>> loaded = new ArrayList<>();
-            for (JsonNode node : root) {
+            for (JsonNode node : historyNode) {
                 String role = node.path("role").asText("");
                 String content = node.path("content").asText("");
                 if (role.isEmpty() || content.isEmpty()) {
@@ -83,6 +140,11 @@ public final class LlmAgent {
                 return false;
             }
             history.addAll(loaded);
+            if (statsNode != null && statsNode.isObject()) {
+                sessionPromptTokens = statsNode.path("prompt_tokens").asInt(0);
+                sessionCompletionTokens = statsNode.path("completion_tokens").asInt(0);
+                maxPromptTokens = statsNode.path("max_prompt_tokens").asInt(0);
+            }
             return true;
         } catch (Exception e) {
             System.err.println("Внимание: не удалось прочитать контекст (" + contextFile + "): "
@@ -93,7 +155,15 @@ public final class LlmAgent {
 
     private void save() {
         try {
-            Files.writeString(contextFile, LlmClient.toJson(history), StandardCharsets.UTF_8);
+            Map<String, Object> doc = new LinkedHashMap<>();
+            doc.put("version", 2);
+            doc.put("history", history);
+            Map<String, Object> stats = new LinkedHashMap<>();
+            stats.put("prompt_tokens", sessionPromptTokens);
+            stats.put("completion_tokens", sessionCompletionTokens);
+            stats.put("max_prompt_tokens", maxPromptTokens);
+            doc.put("stats", stats);
+            Files.writeString(contextFile, LlmClient.toJson(doc), StandardCharsets.UTF_8);
         } catch (Exception e) {
             System.err.println("Внимание: не удалось сохранить контекст (" + contextFile + "): "
                     + e.getMessage());
