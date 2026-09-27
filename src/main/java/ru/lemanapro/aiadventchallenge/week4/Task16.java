@@ -15,8 +15,6 @@ import java.io.File;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -72,8 +70,7 @@ public final class Task16 {
     public static void main(String[] args) throws Exception {
         boolean forceLocal = Arrays.asList(args).contains("local");
         ServerParameters params = chooseServer(forceLocal);
-        String commandLine = (params.getCommand() + " " + String.join(" ", params.getArgs()))
-                .replaceAll("-cp \\S+", "-cp <classpath проекта>");
+        String commandLine = McpLaunch.display(params);
 
         System.out.println("=== День 16. Подключение MCP ===");
         System.out.println("MCP-сервер (stdio): " + abbreviate(commandLine, 160));
@@ -190,33 +187,7 @@ public final class Task16 {
             }
             System.out.println("npx не найден в PATH — использую встроенный MCP-сервер (Task16.LocalServer).");
         }
-        String javaBin = ProcessHandle.current().info().command()
-                .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString());
-        return ServerParameters.builder(javaBin)
-                .args("-cp", runtimeClasspath(), LocalServer.class.getName())
-                .build();
-    }
-
-    /**
-     * Under `mvn exec:java` the project classes and dependencies live in a child URLClassLoader,
-     * not in java.class.path — so collect URLs from the loader chain to start the child JVM.
-     */
-    private static String runtimeClasspath() {
-        Set<String> entries = new LinkedHashSet<>();
-        for (ClassLoader cl = Task16.class.getClassLoader(); cl != null; cl = cl.getParent()) {
-            if (cl instanceof URLClassLoader ucl) {
-                for (URL u : ucl.getURLs()) {
-                    try {
-                        entries.add(Path.of(u.toURI()).toString());
-                    } catch (Exception ignored) {
-                        // non-file URL, skip
-                    }
-                }
-            }
-        }
-        entries.addAll(Arrays.asList(System.getProperty("java.class.path").split(File.pathSeparator)));
-        entries.removeIf(String::isBlank);
-        return String.join(File.pathSeparator, entries);
+        return McpLaunch.javaServer(LocalServer.class);
     }
 
     private static String findOnPath(String exe) {

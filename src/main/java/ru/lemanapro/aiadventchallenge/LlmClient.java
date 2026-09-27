@@ -106,7 +106,32 @@ public final class LlmClient {
         if (temperature != null) {
             body.put("temperature", temperature);
         }
+        return post(client, cfg, body);
+    }
 
+    /**
+     * Chat completion with OpenAI-style function calling (day 17+).
+     * Messages are free-form maps because tool calling needs more than role/content:
+     * assistant messages carry "tool_calls", tool results are {"role":"tool","tool_call_id",...}.
+     *
+     * @param tools OpenAI "tools" array ([{type:function, function:{name, description, parameters}}]); null/empty = none
+     */
+    public static JsonNode sendWithTools(HttpClient client, Config cfg, List<Map<String, Object>> messages,
+                                         List<Map<String, Object>> tools, Double temperature) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", cfg.model());
+        body.put("messages", messages);
+        if (tools != null && !tools.isEmpty()) {
+            body.put("tools", tools);
+            body.put("tool_choice", "auto");
+        }
+        if (temperature != null) {
+            body.put("temperature", temperature);
+        }
+        return post(client, cfg, body);
+    }
+
+    private static JsonNode post(HttpClient client, Config cfg, Map<String, Object> body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cfg.baseUrl().replaceAll("/+$", "") + "/chat/completions"))
                 .timeout(Duration.ofMinutes(2))
