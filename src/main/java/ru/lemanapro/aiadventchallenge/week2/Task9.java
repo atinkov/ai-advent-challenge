@@ -20,7 +20,8 @@ import java.util.List;
  * grows ("Агент: история сжата: ..."), request size staying bounded while the
  * baseline keeps growing, and the final "recall everything" answer being
  * produced from the summary alone. Each phase writes its own context file
- * (task9-off.json / task9-on.json, format v3) for inspection.
+ * (task9-off.json / task9-on.json, format v4 — branches wrapper around the single
+ * "main" branch) for inspection.
  *
  * No report file is written: the canonical report is task9-compression-report.md.
  *
@@ -83,7 +84,8 @@ public final class Task9 {
     private static PhaseStats runPhase(LlmClient.Config cfg, boolean compression, int keepRecent,
                                        int summaryBatch, Path contextFile) throws Exception {
         Files.deleteIfExists(contextFile);
-        LlmAgent agent = new LlmAgent(cfg, compression, keepRecent, summaryBatch, contextFile);
+        LlmAgent agent = new LlmAgent(cfg, new LlmAgent.Settings(LlmAgent.Strategy.FULL, 6,
+                compression, keepRecent, summaryBatch, contextFile));
 
         System.out.println();
         System.out.println("=== Фаза: " + (compression ? "СО сжатием истории" : "БЕЗ сжатия истории")
@@ -136,7 +138,7 @@ public final class Task9 {
                 + on.sessionPrompt() + " (экономия " + percentSaved(off.sessionPrompt(), on.sessionPrompt())
                 + "%, с учётом запросов-резюмирований). Факты воспроизведены в фазе со сжатием: "
                 + on.factsRecalled() + "/" + FACT_MARKERS.size() + " — скользящий пересказ сохранил главное.");
-        System.out.println("Контекст фаз сохранён для разбора: task9-off.json, task9-on.json (формат v3).");
+        System.out.println("Контекст фаз сохранён для разбора: task9-off.json, task9-on.json (формат v4).");
     }
 
     private static int countFacts(String answer) {

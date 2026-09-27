@@ -3,6 +3,9 @@ package ru.lemanapro.aiadventchallenge;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -11,6 +14,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -137,6 +142,53 @@ public final class LlmClient {
     /** Rough local estimate (chars / 2.5) — for display only; the exact count comes from the API usage. */
     public static int estimateTokens(String text) {
         return Math.max(1, (int) Math.ceil(text.length() / 2.5));
+    }
+
+    /**
+     * Builds the HttpClient used for LLM calls. Normal behavior is unchanged
+     * (HttpClient.newHttpClient()); when the env/​.env flag LLM_INSECURE_TLS is
+     * true/1/on, TLS certificate validation is switched off entirely.
+     *
+     * This exists only as a stopgap for a broken/expired server certificate on the
+     * LLM gateway (seen on gpustack.data.lmru.tech) — it disables a real security
+     * check, so use it only for a one-off local run, e.g.
+     *   LLM_INSECURE_TLS=1 mvn -q exec:java -PtaskN
+     * never leave it set in a shared .env or in anything that talks to servers
+     * outside your own trusted network.
+     */
+    public static HttpClient newHttpClient() {
+        if (!parseBool("LLM_INSECURE_TLS", false)) {
+            return HttpClient.newHttpClient();
+        }
+        System.err.println("ВНИМАНИЕ: LLM_INSECURE_TLS включён — проверка TLS-сертификата сервера отключена.");
+        try {
+            TrustManager[] trustAll = {
+                new X509TrustManager() {
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                    }
+
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                    }
+
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return new X509Certificate[0];
+                    }
+                }
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAll, new SecureRandom());
+            return HttpClient.newBuilder().sslContext(sslContext).build();
+        } catch (Exception e) {
+            throw new RuntimeException("Не удалось создать HttpClient с отключённой проверкой TLS", e);
+        }
+    }
+
+    private static boolean parseBool(String name, boolean defaultValue) {
+        String raw = env(name, "").trim();
+        if (raw.isEmpty()) {
+            return defaultValue;
+        }
+        return raw.equals("1") || raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("on");
     }
 
     public static Map<String, String> message(String role, String content) {

@@ -35,6 +35,7 @@ public final class Task6 {
         LlmAgent agent = new LlmAgent(cfg);
 
         System.out.println("Агент запущен (модель: " + cfg.model() + " @ " + cfg.baseUrl() + ")");
+        System.out.println("Стратегия контекста: " + agent.strategyLabel());
         System.out.println("Сжатие истории: " + (agent.compressionEnabled() ? "вкл" : "выкл")
                 + " (окно=" + agent.keepRecent() + ", пачка=" + agent.summaryBatch() + ")");
         if (agent.turnCount() > 0) {

@@ -41,3 +41,7 @@ build/
 /agent-context.json
 /task9-off.json
 /task9-on.json
+/task10-sliding.json
+/task10-facts.json
+/task10-full.json
+/task10-branch.json
