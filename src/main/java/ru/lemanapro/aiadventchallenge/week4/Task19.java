@@ -89,7 +89,7 @@ public final class Task19 {
 
         private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}_]+");
         private static final Pattern SAFE_NAME = Pattern.compile("[\\p{L}\\p{N}._-]{1,80}");
-        private static final Set<String> EXCLUDED = Set.of("target", ".git", ".idea", ".omo", ".mvn", "task19-output", "node_modules");
+        private static final Set<String> EXCLUDED = Set.of("target", ".git", ".idea", ".omo", ".mvn", "task19-output", "task20-output", "node_modules");
 
         record Match(String path, int score, List<String> snippets) {
         }
@@ -108,18 +108,19 @@ public final class Task19 {
         private final Map<String, Summary> summaries = new ConcurrentHashMap<>();
         private final AtomicInteger seq = new AtomicInteger();
 
-        private DocsPipelineMcpServer(Path root, String summaryMode) {
+        private DocsPipelineMcpServer(Path root, String summaryMode, String outDirName) {
             this.root = root;
-            this.outDir = root.resolve("task19-output");
+            this.outDir = root.resolve(outDirName);
             this.summaryMode = summaryMode;
         }
 
         public static void main(String[] args) throws Exception {
             Path root = Path.of(args.length > 0 ? args[0] : ".").toAbsolutePath().normalize();
             String mode = args.length > 1 ? args[1] : "llm";
+            String outDirName = args.length > 2 ? args[2] : "task19-output"; // day 20 reuses this server with task20-output
             System.err.println("[docs-pipeline-mcp-server] MCP-сервер запущен (корень " + root + "), ждёт JSON-RPC на stdin. "
                     + "Сам по себе ничего не выводит — его запускает Task19.main (mvn -q compile exec:java -Ptask19).");
-            DocsPipelineMcpServer s = new DocsPipelineMcpServer(root, mode);
+            DocsPipelineMcpServer s = new DocsPipelineMcpServer(root, mode, outDirName);
             McpJsonMapper json = McpJsonDefaults.getMapper();
 
             CountDownLatch stdinClosed = new CountDownLatch(1);
@@ -180,7 +181,7 @@ public final class Task19 {
                     .toolCall(McpSchema.Tool.builder()
                                     .name("save_to_file")
                                     .title("Сохранить в файл")
-                                    .description("Шаг 3 цепочки. Сохраняет результат в Markdown-файл в папке task19-output/ проекта. "
+                                    .description("Шаг 3 цепочки. Сохраняет результат в Markdown-файл в папке " + outDirName + "/ проекта. "
                                             + "Источник: summary_id (из summarize — предпочтительно) или content. "
                                             + "Возвращает путь, размер и sha256 записанного.")
                                     .inputSchema(json, """
@@ -271,7 +272,8 @@ public final class Task19 {
                 if (EXCLUDED.contains(part.toString())) return false;
             }
             String n = f.getFileName().toString();
-            return (n.endsWith(".md") || n.endsWith(".java")) && !n.equals("task19-pipeline-report.md");
+            return (n.endsWith(".md") || n.endsWith(".java")) && !n.equals("task19-pipeline-report.md")
+                    && !n.equals("task20-orchestration-report.md");
         }
 
         /** Crude stemming that works for Russian and English: lowercase, cut to 5 letters (памяти/память -> памят). */
@@ -407,7 +409,7 @@ public final class Task19 {
             }
             Files.createDirectories(outDir);
             Path target = outDir.resolve(filename).normalize();
-            if (!target.startsWith(outDir)) return error("путь вне task19-output запрещён");
+            if (!target.startsWith(outDir)) return error("путь вне " + outDir.getFileName() + " запрещён");
             String fileText = header + body + "\n";
             Files.writeString(target, fileText, StandardCharsets.UTF_8);
 
