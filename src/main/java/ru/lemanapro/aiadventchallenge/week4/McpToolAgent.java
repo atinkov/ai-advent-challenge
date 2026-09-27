@@ -16,13 +16,18 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Week 4 shared agent: an LLM whose tools come from an MCP server, not from Java code in the agent
- * (extracted from day 17's Task17 so day 18+ can reuse it).
+ * Week 4 shared agent: an LLM whose tools come from MCP, not from Java code in the agent
+ * (extracted from day 17's Task17; used by days 17-20).
  *
- * Turns the server's tools/list into the OpenAI "tools" array (inputSchema passed through as
- * "parameters") and runs a tool loop: LLM tool_calls -> MCP tools/call -> "tool" message -> next LLM
- * call, until a plain answer (at most MAX_TOOL_STEPS tool rounds). Every ask() starts from a fresh
- * dialogue (system prompt + question), so a long-running caller doesn't accumulate history.
+ * Tools come from a {@link ToolRouter}: either one MCP server (the McpSyncClient constructor, days 17-19)
+ * or several at once through {@link McpRegistry} (day 20), which namespaces tool names and routes each
+ * call to the server that owns the tool. The agent turns the router's tool list into the OpenAI "tools"
+ * array (inputSchema passed through as "parameters") and runs a tool loop: LLM tool_calls -> router ->
+ * "tool" message -> next LLM call, until a plain answer (at most maxToolSteps tool rounds).
+ *
+ * ask(question) starts from a fresh dialogue (system prompt + question), so a long-running caller doesn't
+ * accumulate history. conversation() keeps one dialogue across several asks (multi-turn flows: the model
+ * sees its earlier tool calls and results, e.g. "cancel the reminder you just created").
  *
  * Tool-calling mode ("auto" | "native" | "prompt"): auto = native function calling, switching to the
  * text protocol <tool_call>{"name","arguments"}</tool_call> if the LLM server rejects "tools" with a 4xx;
@@ -33,7 +38,23 @@ final class McpToolAgent implements AutoCloseable {
 
     static final int MAX_TOOL_STEPS = 6;
 
-    record ToolCallTrace(String tool, String argumentsJson, boolean isError, String resultPreview, long millis) {
+    /** Where tools come from and where calls go. */
+    interface ToolRouter extends AutoCloseable {
+        List<McpSchema.Tool> tools();
+
+        McpSchema.CallToolResult call(String toolName, Map<String, Object> args);
+
+        /** Which server a tool name is routed to (for traces); "" if unknown. */
+        default String serverOf(String toolName) {
+            return "";
+        }
+
+        @Override
+        void close();
+    }
+
+    record ToolCallTrace(String tool, String argumentsJson, boolean isError, String resultPreview, long millis,
+                         String server) {
     }
 
     record AgentAnswer(String text, List<ToolCallTrace> calls, int llmRequests, String mode) {
@@ -49,24 +70,30 @@ final class McpToolAgent implements AutoCloseable {
 
     private final LlmClient.Config cfg;
     private final HttpClient http = LlmClient.newHttpClient();
-    private final McpSyncClient mcp;
+    private final ToolRouter router;
     private final String basePrompt;
-    private final List<McpSchema.Tool> mcpTools;
+    private final List<McpSchema.Tool> tools;
     private final List<Map<String, Object>> openAiTools = new ArrayList<>();
     private final boolean autoMode;
     private Mode mode;
+    private int maxToolSteps = MAX_TOOL_STEPS;
+
+    /** One MCP server (days 17-19). */
+    McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting, String basePrompt) {
+        this(cfg, singleServer(mcp), modeSetting, basePrompt);
+    }
 
     /**
      * @param modeSetting "auto" | "native" | "prompt"
      * @param basePrompt  task-specific system prompt (tool descriptions are added automatically in prompt mode)
      */
-    McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting, String basePrompt) {
+    McpToolAgent(LlmClient.Config cfg, ToolRouter router, String modeSetting, String basePrompt) {
         this.cfg = cfg;
-        this.mcp = mcp;
+        this.router = router;
         this.basePrompt = basePrompt;
-        this.mcpTools = mcp.listTools().tools();
+        this.tools = router.tools();
         // MCP tool definition -> OpenAI function definition: the inputSchema is passed through as-is
-        for (McpSchema.Tool t : mcpTools) {
+        for (McpSchema.Tool t : tools) {
             openAiTools.add(Map.of("type", "function", "function", Map.of(
                     "name", t.name(),
                     "description", t.description() == null ? "" : t.description(),
@@ -76,12 +103,13 @@ final class McpToolAgent implements AutoCloseable {
         this.mode = "prompt".equalsIgnoreCase(modeSetting) ? Mode.PROMPT : Mode.NATIVE;
     }
 
-    List<McpSchema.Tool> tools() {
-        return mcpTools;
+    McpToolAgent maxToolSteps(int n) {
+        this.maxToolSteps = n;
+        return this;
     }
 
-    McpSyncClient mcp() {
-        return mcp;
+    List<McpSchema.Tool> tools() {
+        return tools;
     }
 
     private String systemPrompt() {
@@ -93,7 +121,7 @@ final class McpToolAgent implements AutoCloseable {
 
                 Доступные инструменты (JSON Schema параметров):
                 """);
-        for (McpSchema.Tool t : mcpTools) {
+        for (McpSchema.Tool t : tools) {
             sb.append("- ").append(t.name()).append(": ").append(t.description()).append("\n  parameters: ");
             try {
                 sb.append(LlmClient.toJson(t.inputSchema()));
@@ -110,14 +138,38 @@ final class McpToolAgent implements AutoCloseable {
         return sb.toString();
     }
 
+    /** One-shot question in a fresh dialogue. */
     AgentAnswer ask(String question) throws Exception {
+        return conversation().ask(question);
+    }
+
+    /** A dialogue that keeps its history (including tool calls and results) across asks. */
+    Conversation conversation() {
+        return new Conversation();
+    }
+
+    final class Conversation {
+        private final List<Map<String, Object>> messages = new ArrayList<>();
+
+        private Conversation() {
+            messages.add(msg("system", systemPrompt()));
+        }
+
+        AgentAnswer ask(String question) throws Exception {
+            messages.add(msg("user", question));
+            return run(messages);
+        }
+
+        int size() {
+            return messages.size();
+        }
+    }
+
+    private AgentAnswer run(List<Map<String, Object>> messages) throws Exception {
         List<ToolCallTrace> calls = new ArrayList<>();
-        List<Map<String, Object>> messages = new ArrayList<>();
-        messages.add(msg("system", systemPrompt()));
-        messages.add(msg("user", question));
         int requests = 0;
 
-        for (int step = 0; step <= MAX_TOOL_STEPS; step++) {
+        for (int step = 0; step <= maxToolSteps; step++) {
             JsonNode response;
             try {
                 requests++;
@@ -179,17 +231,19 @@ final class McpToolAgent implements AutoCloseable {
                 continue;
             }
 
+            messages.add(msg("assistant", content));
             return new AgentAnswer(content, calls, requests, mode.name().toLowerCase());
         }
-        return new AgentAnswer("(агент остановлен: превышен лимит вызовов инструментов " + MAX_TOOL_STEPS + ")",
-                calls, requests, mode.name().toLowerCase());
+        String stopped = "(агент остановлен: превышен лимит вызовов инструментов " + maxToolSteps + ")";
+        messages.add(msg("assistant", stopped));
+        return new AgentAnswer(stopped, calls, requests, mode.name().toLowerCase());
     }
 
     /** trace for reports + the full text that goes back to the model */
     private record Executed(ToolCallTrace trace, String fullResult) {
     }
 
-    /** The actual MCP call: tools/call on the server, whatever the LLM asked for. */
+    /** The actual MCP call through the router: tools/call on the owning server, whatever the LLM asked for. */
     private Executed execute(String name, String argsJson) {
         long t0 = System.nanoTime();
         Map<String, Object> args;
@@ -199,26 +253,49 @@ final class McpToolAgent implements AutoCloseable {
         } catch (Exception e) {
             args = Map.of();
         }
-        System.out.println("   [MCP] → tools/call " + name + " " + argsJson);
+        String server = router.serverOf(name);
+        System.out.println("   [MCP" + (server.isEmpty() ? "" : " " + server) + "] → tools/call " + name + " " + argsJson);
         McpSchema.CallToolResult r;
         try {
-            r = mcp.callTool(new McpSchema.CallToolRequest(name, args));
+            r = router.call(name, args);
         } catch (Exception e) {
             r = McpSchema.CallToolResult.builder().addTextContent("Ошибка вызова MCP: " + e.getMessage()).isError(true).build();
         }
         String text = textOf(r);
         boolean err = Boolean.TRUE.equals(r.isError());
         long ms = (System.nanoTime() - t0) / 1_000_000;
-        System.out.println("   [MCP] ← " + (err ? "ошибка" : "ok") + ", " + text.length() + " символов, " + ms + " мс");
-        return new Executed(new ToolCallTrace(name, argsJson, err, preview(text, 1500), ms), text);
+        System.out.println("   [MCP" + (server.isEmpty() ? "" : " " + server) + "] ← " + (err ? "ошибка" : "ok") + ", "
+                + text.length() + " символов, " + ms + " мс");
+        return new Executed(new ToolCallTrace(name, argsJson, err, preview(text, 1500), ms, server), text);
     }
 
     @Override
     public void close() {
-        mcp.closeGracefully();
+        router.close();
     }
 
     // ---- helpers
+
+    private static ToolRouter singleServer(McpSyncClient mcp) {
+        return new ToolRouter() {
+            private final List<McpSchema.Tool> tools = mcp.listTools().tools();
+
+            @Override
+            public List<McpSchema.Tool> tools() {
+                return tools;
+            }
+
+            @Override
+            public McpSchema.CallToolResult call(String toolName, Map<String, Object> args) {
+                return mcp.callTool(new McpSchema.CallToolRequest(toolName, args));
+            }
+
+            @Override
+            public void close() {
+                mcp.closeGracefully();
+            }
+        };
+    }
 
     private static Map<String, Object> msg(String role, String content) {
         Map<String, Object> m = new LinkedHashMap<>();
