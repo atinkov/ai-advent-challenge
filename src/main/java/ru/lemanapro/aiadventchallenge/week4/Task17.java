@@ -1,6 +1,5 @@
 package ru.lemanapro.aiadventchallenge.week4;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
@@ -16,7 +15,6 @@ import ru.lemanapro.aiadventchallenge.LlmClient;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +43,7 @@ import java.util.regex.Pattern;
  *     git_commit_details(sha)             — author/date/message + changed files with +/- lines
  *     git_branches(include_remote)        — branches with their last commit, newest first
  *
- *   McpToolAgent — connects to that server as an MCP client, turns the server's tool list
+ *   McpToolAgent (week4/McpToolAgent.java, shared) — connects to that server as an MCP client, turns the server's tool list
  *   (tools/list) into the OpenAI "tools" array, and runs a tool-calling loop against the LLM:
  *   model asks for a tool -> agent executes it via MCP tools/call -> result goes back into the
  *   dialogue as a "tool" message -> model answers using it (or asks for another tool, e.g.
@@ -74,7 +72,13 @@ import java.util.regex.Pattern;
 public final class Task17 {
 
     private static final Path REPORT_FILE = Path.of("task17-mcp-agent-report.md");
-    private static final int MAX_TOOL_STEPS = 6;
+
+    private static final String AGENT_PROMPT = """
+            Ты ассистент разработчика с доступом к git-репозиторию проекта через инструменты (MCP-сервер git-mcp-server).
+            Правила:
+            - Любые факты о репозитории (коммиты, хеши, файлы, ветки, даты, авторы) бери ТОЛЬКО из результатов инструментов, не выдумывай.
+            - Если для ответа нужно несколько шагов (например, сначала найти коммит через git_log, потом посмотреть его через git_commit_details) — вызывай инструменты последовательно.
+            - Итоговый ответ — на русском, кратко, с конкретными значениями из результатов (короткие хеши, имена веток, файлы, числа).""";
 
     private static final List<String> DEMO_QUESTIONS = List.of(
             "Какие 5 последних коммитов в репозитории? Для каждого укажи короткий хеш, дату и что сделано.",
@@ -374,219 +378,10 @@ public final class Task17 {
     }
 
     // =====================================================================================
-    //  AGENT: LLM + MCP client
-    // =====================================================================================
-
-    record ToolCallTrace(String tool, String argumentsJson, boolean isError, String resultPreview, long millis) {
-    }
-
-    record AgentAnswer(String text, List<ToolCallTrace> calls, int llmRequests, String mode) {
-    }
-
-    enum Mode { NATIVE, PROMPT }
-
-    /** Agent whose tools come from an MCP server, not from Java code in the agent. */
-    static final class McpToolAgent implements AutoCloseable {
-
-        private static final Pattern TOOL_CALL_TAG = Pattern.compile("<tool_call>\\s*(\\{.*?})\\s*</tool_call>", Pattern.DOTALL);
-        private static final Pattern THINK = Pattern.compile("<think>.*?</think>", Pattern.DOTALL);
-
-        private final LlmClient.Config cfg;
-        private final HttpClient http = LlmClient.newHttpClient();
-        private final McpSyncClient mcp;
-        private final List<McpSchema.Tool> mcpTools;
-        private final List<Map<String, Object>> openAiTools = new ArrayList<>();
-        private Mode mode;
-        private final boolean autoMode;
-
-        McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting) {
-            this.cfg = cfg;
-            this.mcp = mcp;
-            this.mcpTools = mcp.listTools().tools();
-            // MCP tool definition -> OpenAI function definition: the inputSchema is passed through as-is
-            for (McpSchema.Tool t : mcpTools) {
-                openAiTools.add(Map.of("type", "function", "function", Map.of(
-                        "name", t.name(),
-                        "description", t.description() == null ? "" : t.description(),
-                        "parameters", t.inputSchema())));
-            }
-            this.autoMode = "auto".equalsIgnoreCase(modeSetting);
-            this.mode = "prompt".equalsIgnoreCase(modeSetting) ? Mode.PROMPT : Mode.NATIVE;
-        }
-
-        List<McpSchema.Tool> tools() {
-            return mcpTools;
-        }
-
-        private String systemPrompt() {
-            String base = """
-                    Ты ассистент разработчика с доступом к git-репозиторию проекта через инструменты (MCP-сервер git-mcp-server).
-                    Правила:
-                    - Любые факты о репозитории (коммиты, хеши, файлы, ветки, даты, авторы) бери ТОЛЬКО из результатов инструментов, не выдумывай.
-                    - Если для ответа нужно несколько шагов (например, сначала найти коммит через git_log, потом посмотреть его через git_commit_details) — вызывай инструменты последовательно.
-                    - Итоговый ответ — на русском, кратко, с конкретными значениями из результатов (короткие хеши, имена веток, файлы, числа).""";
-            if (mode == Mode.NATIVE) {
-                return base;
-            }
-            StringBuilder sb = new StringBuilder(base).append("""
-
-
-                    Доступные инструменты (JSON Schema параметров):
-                    """);
-            for (McpSchema.Tool t : mcpTools) {
-                sb.append("- ").append(t.name()).append(": ").append(t.description()).append("\n  parameters: ");
-                try {
-                    sb.append(LlmClient.toJson(t.inputSchema()));
-                } catch (Exception e) {
-                    sb.append("{}");
-                }
-                sb.append('\n');
-            }
-            sb.append("""
-
-                    Чтобы вызвать инструмент, ответь ТОЛЬКО блоком (без другого текста):
-                    <tool_call>{"name": "<имя инструмента>", "arguments": {<параметры>}}</tool_call>
-                    Результат придёт следующим сообщением. Когда данных достаточно — дай обычный итоговый ответ без <tool_call>.""");
-            return sb.toString();
-        }
-
-        AgentAnswer ask(String question) throws Exception {
-            List<ToolCallTrace> calls = new ArrayList<>();
-            List<Map<String, Object>> messages = new ArrayList<>();
-            messages.add(msg("system", systemPrompt()));
-            messages.add(msg("user", question));
-            int requests = 0;
-
-            for (int step = 0; step <= MAX_TOOL_STEPS; step++) {
-                JsonNode response;
-                try {
-                    requests++;
-                    response = LlmClient.sendWithTools(http, cfg, messages, mode == Mode.NATIVE ? openAiTools : null, 0.2);
-                } catch (LlmClient.RequestException e) {
-                    if (autoMode && mode == Mode.NATIVE && e.status() >= 400 && e.status() < 500) {
-                        System.out.println("   [агент] сервер LLM отклонил параметр tools (HTTP " + e.status()
-                                + ") — переключаюсь на текстовый протокол <tool_call>");
-                        mode = Mode.PROMPT;
-                        messages.set(0, msg("system", systemPrompt()));
-                        step--;
-                        continue;
-                    }
-                    throw e;
-                }
-
-                JsonNode message = response.path("choices").path(0).path("message");
-                String content = THINK.matcher(message.path("content").asText("")).replaceAll("").strip();
-                JsonNode nativeCalls = message.path("tool_calls");
-
-                if (nativeCalls.isArray() && !nativeCalls.isEmpty()) {
-                    // assistant turn with tool_calls must be echoed back verbatim before the tool results
-                    Map<String, Object> assistant = new LinkedHashMap<>();
-                    assistant.put("role", "assistant");
-                    assistant.put("content", content.isEmpty() ? null : content);
-                    List<Map<String, Object>> echoed = new ArrayList<>();
-                    for (JsonNode c : nativeCalls) {
-                        echoed.add(Map.of("id", c.path("id").asText(), "type", "function", "function", Map.of(
-                                "name", c.path("function").path("name").asText(),
-                                "arguments", c.path("function").path("arguments").asText("{}"))));
-                    }
-                    assistant.put("tool_calls", echoed);
-                    messages.add(assistant);
-                    for (JsonNode c : nativeCalls) {
-                        Executed t = execute(c.path("function").path("name").asText(),
-                                c.path("function").path("arguments").asText("{}"));
-                        calls.add(t.trace());
-                        Map<String, Object> toolMsg = new LinkedHashMap<>();
-                        toolMsg.put("role", "tool");
-                        toolMsg.put("tool_call_id", c.path("id").asText());
-                        toolMsg.put("content", t.fullResult());
-                        messages.add(toolMsg);
-                    }
-                    continue;
-                }
-
-                Matcher m = TOOL_CALL_TAG.matcher(content);
-                if (m.find()) {
-                    // text protocol: model wrote <tool_call>{...}</tool_call> (prompt mode, or Qwen without a tool parser)
-                    JsonNode call = LlmClient.parseJson(m.group(1));
-                    JsonNode argsNode = call.path("arguments");
-                    String argsJson = argsNode.isTextual() ? argsNode.asText() : LlmClient.toJson(argsNode.isMissingNode() ? Map.of() : argsNode);
-                    Executed t = execute(call.path("name").asText(), argsJson);
-                    calls.add(t.trace());
-                    messages.add(msg("assistant", m.group(0)));
-                    messages.add(msg("user", "Результат инструмента " + t.trace().tool() + (t.trace().isError() ? " (ОШИБКА)" : "")
-                            + ":\n" + t.fullResult() + "\n\nПродолжай: вызови ещё инструмент или дай итоговый ответ."));
-                    continue;
-                }
-
-                return new AgentAnswer(content, calls, requests, mode.name().toLowerCase());
-            }
-            return new AgentAnswer("(агент остановлен: превышен лимит вызовов инструментов " + MAX_TOOL_STEPS + ")",
-                    calls, requests, mode.name().toLowerCase());
-        }
-
-        /** trace for the report + the full text that goes back to the model */
-        private record Executed(ToolCallTrace trace, String fullResult) {
-        }
-
-        /** The actual MCP call: tools/call on the server, whatever the LLM asked for. */
-        private Executed execute(String name, String argsJson) {
-            long t0 = System.nanoTime();
-            Map<String, Object> args;
-            try {
-                JsonNode parsed = LlmClient.parseJson(argsJson == null || argsJson.isBlank() ? "{}" : argsJson);
-                args = parsed.isObject() ? JSON.convertValue(parsed, MAP_TYPE) : Map.of();
-            } catch (Exception e) {
-                args = Map.of();
-            }
-            System.out.println("   [MCP] → tools/call " + name + " " + argsJson);
-            McpSchema.CallToolResult r;
-            try {
-                r = mcp.callTool(new McpSchema.CallToolRequest(name, args));
-            } catch (Exception e) {
-                r = McpSchema.CallToolResult.builder().addTextContent("Ошибка вызова MCP: " + e.getMessage()).isError(true).build();
-            }
-            String text = textOf(r);
-            boolean err = Boolean.TRUE.equals(r.isError());
-            long ms = (System.nanoTime() - t0) / 1_000_000;
-            System.out.println("   [MCP] ← " + (err ? "ошибка" : "ok") + ", " + text.length() + " символов, " + ms + " мс");
-            return new Executed(new ToolCallTrace(name, argsJson, err, preview(text, 1500), ms), text);
-        }
-
-        @Override
-        public void close() {
-            mcp.closeGracefully();
-        }
-    }
-
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
-    private static final com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>> MAP_TYPE =
-            new com.fasterxml.jackson.core.type.TypeReference<>() {
-            };
-
-    private static Map<String, Object> msg(String role, String content) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("role", role);
-        m.put("content", content);
-        return m;
-    }
-
-    static String textOf(McpSchema.CallToolResult r) {
-        StringBuilder sb = new StringBuilder();
-        for (McpSchema.Content c : r.content()) {
-            if (c instanceof McpSchema.TextContent t) sb.append(t.text());
-        }
-        return sb.toString();
-    }
-
-    private static String preview(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max) + "…";
-    }
-
-    // =====================================================================================
     //  DEMO
     // =====================================================================================
 
-    record Scenario(String question, AgentAnswer answer, List<String> checks, boolean passed) {
+    record Scenario(String question, McpToolAgent.AgentAnswer answer, List<String> checks, boolean passed) {
     }
 
     public static void main(String[] args) throws Exception {
@@ -610,7 +405,7 @@ public final class Task17 {
         System.out.println("[OK] MCP-соединение: " + init.serverInfo().name() + " " + init.serverInfo().version()
                 + ", протокол " + init.protocolVersion());
 
-        try (McpToolAgent agent = new McpToolAgent(cfg, mcp, toolMode)) {
+        try (McpToolAgent agent = new McpToolAgent(cfg, mcp, toolMode, AGENT_PROMPT)) {
             // ---- 1. registered tools + their input schemas
             System.out.println("\n--- 1. Зарегистрированные инструменты (tools/list) ---");
             for (McpSchema.Tool t : agent.tools()) {
@@ -621,7 +416,7 @@ public final class Task17 {
             // ---- 2. direct call from the application, no LLM
             System.out.println("\n--- 2. Прямой вызов из приложения: git_log {limit: 3} ---");
             McpSchema.CallToolResult direct = mcp.callTool(new McpSchema.CallToolRequest("git_log", Map.of("limit", 3)));
-            System.out.println(textOf(direct).strip());
+            System.out.println(McpToolAgent.textOf(direct).strip());
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> commits = direct.structuredContent() instanceof Map<?, ?> sc
                     ? (List<Map<String, Object>>) ((Map<String, Object>) sc).get("commits") : List.of();
@@ -635,7 +430,7 @@ public final class Task17 {
             for (int i = 0; i < questions.size(); i++) {
                 String q = questions.get(i);
                 System.out.println("\n[" + (i + 1) + "/" + questions.size() + "] Вопрос: " + q);
-                AgentAnswer a = agent.ask(q);
+                McpToolAgent.AgentAnswer a = agent.ask(q);
                 System.out.println("Ответ агента (" + a.calls().size() + " вызов(а) MCP, " + a.llmRequests()
                         + " запрос(а) к LLM, режим " + a.mode() + "):");
                 System.out.println(a.text().strip().indent(2).stripTrailing());
@@ -647,13 +442,13 @@ public final class Task17 {
             long passed = scenarios.stream().filter(Scenario::passed).count();
             System.out.println("\nИТОГ: " + passed + "/" + scenarios.size()
                     + " сценариев — агент вызвал MCP-инструмент, получил результат и использовал его в ответе.");
-            writeReport(cfg, repo, init, agent.tools(), textOf(direct), lastSha, scenarios);
+            writeReport(cfg, repo, init, agent.tools(), McpToolAgent.textOf(direct), lastSha, scenarios);
             System.out.println("Отчёт: " + REPORT_FILE.toAbsolutePath());
         }
     }
 
     /** Checks from the actual trace and answer text, not assumed. */
-    private static Scenario evaluate(String question, AgentAnswer a) {
+    private static Scenario evaluate(String question, McpToolAgent.AgentAnswer a) {
         List<String> checks = new ArrayList<>();
         boolean called = !a.calls().isEmpty();
         boolean okCall = a.calls().stream().anyMatch(c -> !c.isError());
@@ -662,7 +457,7 @@ public final class Task17 {
         Pattern sha = Pattern.compile("\\b[0-9a-f]{7,40}\\b");
         Pattern branch = Pattern.compile("(?m)^\\*?\\s*([\\w./-]+) \\| [0-9a-f]{7,}");
         Pattern file = Pattern.compile("(?m)^\\s{2}(\\S+)\\s{2}\\+\\d+");
-        for (ToolCallTrace c : a.calls()) {
+        for (McpToolAgent.ToolCallTrace c : a.calls()) {
             Matcher m = sha.matcher(c.resultPreview());
             while (m.find()) tokens.add(m.group().substring(0, 7));
             Matcher b = branch.matcher(c.resultPreview());
@@ -672,7 +467,7 @@ public final class Task17 {
         }
         String used = tokens.stream().filter(t -> a.text().contains(t)).findFirst().orElse(null);
         checks.add((called ? "[OK]   " : "[FAIL] ") + "агент вызвал MCP-инструмент: "
-                + (called ? a.calls().stream().map(ToolCallTrace::tool).toList() : "нет"));
+                + (called ? a.calls().stream().map(McpToolAgent.ToolCallTrace::tool).toList() : "нет"));
         checks.add((okCall ? "[OK]   " : "[FAIL] ") + "инструмент вернул результат без ошибки");
         checks.add((used != null ? "[OK]   " : "[FAIL] ") + "ответ использует данные из результата"
                 + (used != null ? " (содержит «" + used + "» из ответа инструмента)" : ""));
@@ -709,7 +504,7 @@ public final class Task17 {
             md.append("### ").append(i + 1).append(". ").append(s.question()).append("\n\n");
             md.append("Режим: ").append(s.answer().mode()).append(", запросов к LLM: ").append(s.answer().llmRequests())
                     .append(", вызовов MCP: ").append(s.answer().calls().size()).append("\n\n");
-            for (ToolCallTrace c : s.answer().calls()) {
+            for (McpToolAgent.ToolCallTrace c : s.answer().calls()) {
                 md.append("- `").append(c.tool()).append(" ").append(c.argumentsJson()).append("` → ")
                         .append(c.isError() ? "**ошибка**" : "ok").append(", ").append(c.millis()).append(" мс\n");
             }
