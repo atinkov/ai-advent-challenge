@@ -25,7 +25,8 @@ import java.util.stream.Collectors;
  * constraints and terms. The dialogue (state + history) is persisted to task25-chat.json and survives a
  * restart.
  *
- * Demo mode runs two long scripted scenarios (12 messages each) and checks every turn:
+ * The default run is a fully automated demonstration — no manual input: two long scripted scenarios
+ * (12 messages each) are played through the chat, and every turn is checked:
  *   - the sources are printed (base chunks with quotes / task memory / an explicit "nothing relevant");
  *   - the goal recorded at the first message is still the goal in memory (it is never lost or drifted);
  *   - the constraint fixed at the start is honoured in the answer (no code / at most 4 list items);
@@ -34,8 +35,8 @@ import java.util.stream.Collectors;
  * Writes task25-chat-report.md.
  *
  * Usage:
- *   mvn -q compile exec:java -Ptask25                           interactive chat (exit / reset / state)
- *   mvn -q exec:java -Ptask25 -Dexec.args="demo"                two scripted scenarios + report
+ *   mvn -q compile exec:java -Ptask25                           automated demo: two scripted scenarios + report
+ *   mvn -q exec:java -Ptask25 -Dexec.args="chat"                interactive chat (exit / reset / state)
  *   mvn -q exec:java -Ptask25 -Dexec.args="Ваш вопрос"          one message into the persisted chat
  * Env: TASK25_CHAT_FILE (default task25-chat.json), RAG_STRATEGY and the RAG_* settings of RagPipeline.
  */
@@ -161,7 +162,9 @@ public final class Task25 {
         System.out.println("Модель: " + cfg.model() + " @ " + cfg.baseUrl());
         System.out.println("Индекс: " + index.meta().strategy() + ", " + index.chunks().size() + " чанков, эмбеддер " + index.meta().embedder());
 
-        if (args.length > 0 && args[0].equalsIgnoreCase("demo")) {
+        if (args.length == 0 || args[0].equalsIgnoreCase("demo")) { // the default: no manual input at all
+            System.out.println("Режим: автоматическая демонстрация — " + SCENARIOS.size() + " сценария по " + SCENARIOS.getFirst().steps().size()
+                    + " сообщений, ввод не требуется. Интерактивный чат: -Dexec.args=\"chat\"");
             demo(cfg, index, pipeline, settings);
             return;
         }
@@ -171,7 +174,7 @@ public final class Task25 {
         if (chat.turnCount() > 0) {
             System.out.println("Диалог восстановлен: реплик " + chat.turnCount() + "; память — " + chat.state().oneLine());
         }
-        if (args.length > 0) {
+        if (!args[0].equalsIgnoreCase("chat")) {
             show(chat.send(String.join(" ", args)));
             return;
         }
@@ -286,7 +289,7 @@ public final class Task25 {
         StringBuilder md = new StringBuilder();
         md.append("# День 25. Мини-чат с RAG и памятью задачи\n\n");
         md.append("_Сгенерировано: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
-                .append("_ — `mvn -q compile exec:java -Ptask25 -Dexec.args=\"demo\"`, модель ").append(cfg.model()).append(", индекс `")
+                .append("_ — `mvn -q compile exec:java -Ptask25`, модель ").append(cfg.model()).append(", индекс `")
                 .append(index.meta().strategy()).append("` (").append(index.chunks().size()).append(" чанков, эмбеддер `").append(index.meta().embedder()).append("`)\n\n");
         md.append("```\nсообщение ─▶ ПЛАН (LLM, JSON) ──┬─▶ поисковый запрос с раскрытым контекстом ─▶ RAG: поиск + этап 2 ─▶ ответ + источники + цитаты\n")
                 .append("  история (последние 6) ───────┤                                                 контекст пуст ─▶ «не знаю» + уточнение\n")
