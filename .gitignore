@@ -49,3 +49,11 @@ build/
 /task18-scheduler.json.tmp
 /task20-scheduler.json
 /task20-scheduler.json.tmp
+/task21-index-fixed.json
+/task21-index-structure.json
+/task21-index-*.json.tmp
+/task25-chat.json
+/task25-chat.json.tmp
+/task25-scenario-s1.json
+/task25-scenario-s2.json
+/task25-scenario-*.json.tmp

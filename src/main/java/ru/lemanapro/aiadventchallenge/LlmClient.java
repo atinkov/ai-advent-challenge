@@ -32,6 +32,9 @@ import java.util.Map;
  *
  * Values are resolved in this order: process environment, then the .env file
  * in the working directory, then the defaults above.
+ *
+ * Day 21+: embeddings go through embed() / listModels(); endpoint from embeddingConfig()
+ * (EMBEDDING_BASE_URL, EMBEDDING_API_KEY, EMBEDDING_MODEL — all optional).
  */
 public final class LlmClient {
 
@@ -132,8 +135,12 @@ public final class LlmClient {
     }
 
     private static JsonNode post(HttpClient client, Config cfg, Map<String, Object> body) throws Exception {
+        return postTo(client, cfg, "/chat/completions", body);
+    }
+
+    private static JsonNode postTo(HttpClient client, Config cfg, String path, Map<String, Object> body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(cfg.baseUrl().replaceAll("/+$", "") + "/chat/completions"))
+                .uri(URI.create(cfg.baseUrl().replaceAll("/+$", "") + path))
                 .timeout(Duration.ofMinutes(2))
                 .header("Authorization", "Bearer " + cfg.apiKey())
                 .header("Content-Type", "application/json")
@@ -145,6 +152,68 @@ public final class LlmClient {
             throw new RequestException(response.statusCode(), response.body());
         }
         return MAPPER.readTree(response.body());
+    }
+
+    /**
+     * Embedding endpoint config (day 21+). Defaults to the chat endpoint and key; override with
+     * EMBEDDING_BASE_URL / EMBEDDING_API_KEY (e.g. a local Ollama: http://localhost:11434/v1).
+     * model = EMBEDDING_MODEL, or "" when it is not set (the caller then discovers one via listModels()).
+     */
+    public static Config embeddingConfig(Config chat) {
+        return new Config(
+                env("EMBEDDING_API_KEY", chat.apiKey()),
+                env("EMBEDDING_BASE_URL", chat.baseUrl()),
+                env("EMBEDDING_MODEL", ""));
+    }
+
+    /** GET /models -> model ids served by the endpoint; throws RequestException on a non-200 status. */
+    public static List<String> listModels(HttpClient client, Config cfg) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(cfg.baseUrl().replaceAll("/+$", "") + "/models"))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization", "Bearer " + cfg.apiKey())
+                .GET()
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RequestException(response.statusCode(), response.body());
+        }
+        List<String> ids = new java.util.ArrayList<>();
+        for (JsonNode m : MAPPER.readTree(response.body()).path("data")) {
+            ids.add(m.path("id").asText());
+        }
+        return ids;
+    }
+
+    /**
+     * POST /embeddings (OpenAI-compatible) for a batch of inputs; cfg.model() is the embedding model.
+     * Returns one raw vector per input, in input order (the server's "index" field is honoured).
+     */
+    public static float[][] embed(HttpClient client, Config cfg, List<String> inputs) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", cfg.model());
+        body.put("input", inputs);
+        JsonNode data = postTo(client, cfg, "/embeddings", body).path("data");
+        float[][] vectors = new float[inputs.size()][];
+        int pos = 0;
+        for (JsonNode item : data) {
+            int index = item.path("index").asInt(pos);
+            JsonNode emb = item.path("embedding");
+            float[] v = new float[emb.size()];
+            for (int i = 0; i < v.length; i++) {
+                v[i] = (float) emb.get(i).asDouble();
+            }
+            if (index >= 0 && index < vectors.length) {
+                vectors[index] = v;
+            }
+            pos++;
+        }
+        for (float[] v : vectors) {
+            if (v == null || v.length == 0) {
+                throw new IllegalStateException("embeddings: сервер вернул " + data.size() + " векторов на " + inputs.size() + " входов");
+            }
+        }
+        return vectors;
     }
 
     /** Sends one request; on a non-200 status prints the error and exits (day-class behavior). */
