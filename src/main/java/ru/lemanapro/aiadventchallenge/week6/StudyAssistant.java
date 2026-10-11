@@ -265,6 +265,26 @@ public final class StudyAssistant {
         return generate(messages, think, 0.3, null, emit);
     }
 
+    /** Retrieval result + the exact chat messages a model gets for a course question (day 28 compares models on it). */
+    public record RagRequest(List<Source> sources, List<Map<String, String>> messages, long retrievalMs) {
+    }
+
+    /**
+     * Same prompt as {@link #ask} in ASK mode with no lesson open and no history: local retrieval → numbered
+     * fragments → TUTOR + NOT_FOUND_RULE. Any chat model (local or cloud) can be given these messages as is.
+     */
+    public RagRequest prepare(String question) throws Exception {
+        long t0 = System.nanoTime();
+        List<RagIndex.Hit> hits = retrieve(question, null, settings.topK());
+        List<Source> sources = sources(hits);
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        String user = "Фрагменты курса:\n" + fragments(hits, sources, settings.contextChars())
+                + "\n\nВопрос: " + question + "\n\n(Ответь по фрагментам, ставь ссылки [n].)";
+        return new RagRequest(sources, List.of(
+                LlmClient.message("system", TUTOR + NOT_FOUND_RULE),
+                LlmClient.message("user", user)), ms);
+    }
+
     // ---------------------------------------------------------------- explain the open lesson
 
     public OllamaClient.ChatResult explain(String lessonId, Explain kind, boolean think,
