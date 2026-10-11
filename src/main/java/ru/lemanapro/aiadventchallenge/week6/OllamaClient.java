@@ -11,9 +11,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * Week 6 shared: thin client for the NATIVE Ollama HTTP API (http://localhost:11434/api/...).
@@ -176,6 +180,109 @@ public final class OllamaClient implements AutoCloseable {
                 r.path("prompt_eval_duration").asLong(0),
                 r.path("eval_duration").asLong(0),
                 wallMs);
+    }
+
+    // ---------------------------------------------------------------- streaming chat (day 27)
+
+    /** One streamed piece: answer text and/or reasoning text (thinking models with think=true). */
+    public record Delta(String content, String thinking) {
+    }
+
+    /**
+     * POST /api/chat with stream=true: every NDJSON line goes to onDelta as it arrives; returns the final
+     * metrics with the full answer text. The model generates only while the stream is read — an exception
+     * thrown from onDelta (the browser went away) closes the connection and Ollama stops.
+     *
+     * @param options Ollama options (num_ctx, num_predict, temperature, seed ...), may be null
+     * @param think   true/false for thinking models (qwen3: false = answer right away); null = model default.
+     *                A model without thinking support rejects the field — the call is then retried without it.
+     *                If the model runner dies before the first token (out of memory), the call is retried once.
+     * @param format  null, "json", or a JSON schema (Map) — structured output
+     */
+    public ChatResult chatStream(String model, List<Map<String, String>> messages, Map<String, Object> options,
+                                 Boolean think, Object format, Consumer<Delta> onDelta) throws Exception {
+        boolean[] emitted = {false};
+        Consumer<Delta> tracked = d -> {
+            emitted[0] = true;
+            onDelta.accept(d);
+        };
+        try {
+            return doChatStream(model, messages, options, think, format, tracked);
+        } catch (IllegalStateException e) {
+            String msg = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+            if (think != null && msg.contains("think")) {
+                return doChatStream(model, messages, options, null, format, tracked);
+            }
+            // the model runner process died (usually out of memory) before the first token: Ollama restarts it
+            // on the next request, so one retry is safe — nothing has been shown to the user yet
+            if (!emitted[0] && (msg.contains("unexpectedly stopped") || msg.contains("has terminated"))) {
+                System.out.println("· Ollama: процесс модели перезапускается, повторяю запрос");
+                Thread.sleep(2000);
+                return doChatStream(model, messages, options, think, format, tracked);
+            }
+            throw e;
+        }
+    }
+
+    private ChatResult doChatStream(String model, List<Map<String, String>> messages, Map<String, Object> options,
+                                    Boolean think, Object format, Consumer<Delta> onDelta) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("messages", messages);
+        body.put("stream", true);
+        if (think != null) {
+            body.put("think", think);
+        }
+        if (format != null) {
+            body.put("format", format);
+        }
+        if (options != null && !options.isEmpty()) {
+            body.put("options", options);
+        }
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + "/api/chat"))
+                .timeout(Duration.ofMinutes(15))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))
+                .build();
+        long t0 = System.nanoTime();
+        HttpResponse<Stream<String>> resp;
+        try {
+            resp = http.send(req, HttpResponse.BodyHandlers.ofLines());
+        } catch (ConnectException e) {
+            throw new ConnectException("Ollama не отвечает на " + baseUrl + " (запущен ли `ollama serve`?)");
+        }
+        StringBuilder text = new StringBuilder();
+        try (Stream<String> lines = resp.body()) {
+            if (resp.statusCode() != 200) {
+                throw new IllegalStateException("Ollama POST /api/chat → HTTP " + resp.statusCode() + ": "
+                        + String.join("\n", lines.toList()));
+            }
+            Iterator<String> it = lines.iterator();
+            while (it.hasNext()) {
+                String line = it.next();
+                if (line.isBlank()) {
+                    continue;
+                }
+                JsonNode r = MAPPER.readTree(line);
+                if (r.has("error")) {
+                    throw new IllegalStateException("Ollama: " + r.path("error").asText());
+                }
+                String content = r.path("message").path("content").asText("");
+                String thinking = r.path("message").path("thinking").asText("");
+                if (!content.isEmpty() || !thinking.isEmpty()) {
+                    text.append(content);
+                    onDelta.accept(new Delta(content, thinking));
+                }
+                if (r.path("done").asBoolean(false)) {
+                    return new ChatResult(text.toString(), r.path("done_reason").asText("?"),
+                            r.path("prompt_eval_count").asInt(0), r.path("eval_count").asInt(0),
+                            r.path("total_duration").asLong(0), r.path("load_duration").asLong(0),
+                            r.path("prompt_eval_duration").asLong(0), r.path("eval_duration").asLong(0),
+                            (System.nanoTime() - t0) / 1_000_000);
+                }
+            }
+        }
+        throw new IllegalStateException("Ollama: поток ответа оборвался без done");
     }
 
     // ---------------------------------------------------------------- transport

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Наставник НТ</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#" aria-label="Наставник НТ — карта курса">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h4v-4h4v-6h4v-4h4v4h4" /></svg>
+    <span>Наставник НТ</span>
+  </a>
+  <div class="course-name" id="courseName"></div>
+  <button class="status" id="status" type="button" aria-live="polite" title="Состояние локальной модели">
+    <span class="dot"></span><span id="statusText">Подключаюсь к Ollama…</span>
+  </button>
+</header>
+
+<div class="status-pop" id="statusPop" hidden></div>
+
+<main class="layout" id="layout" data-view="lesson">
+  <nav class="course" id="coursePane" aria-label="Уроки курса">
+    <section class="profile" aria-label="Прогресс по курсу">
+      <svg id="profileChart" viewBox="0 0 280 92" role="img"></svg>
+      <p class="profile-caption" id="profileCaption"></p>
+    </section>
+    <label class="filter">
+      <span class="sr">Найти урок</span>
+      <input id="filter" type="search" placeholder="Найти урок">
+    </label>
+    <ol class="modules" id="modules"></ol>
+  </nav>
+
+  <article class="lesson" id="lessonPane" aria-live="polite">
+    <div class="lesson-inner">
+      <p class="crumb" id="crumb"></p>
+      <h1 id="lessonTitle">Загружаю курс…</h1>
+      <div class="actions" id="actions" hidden>
+        <button type="button" data-act="summary">Конспект</button>
+        <button type="button" data-act="simple">Объясни проще</button>
+        <button type="button" data-act="quiz">Проверь себя</button>
+        <button type="button" data-act="hint" hidden>Подсказка к заданию</button>
+        <button type="button" class="done-toggle" data-act="done" aria-pressed="false">Отметить пройденным</button>
+      </div>
+      <div class="md" id="lessonBody"></div>
+      <nav class="pager" id="pager" aria-label="Соседние уроки"></nav>
+    </div>
+  </article>
+
+  <aside class="tutor" id="tutorPane" aria-label="Наставник">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabChat" aria-selected="true" data-tab="chat">Диалог</button>
+      <button role="tab" id="tabQuiz" aria-selected="false" data-tab="quiz">Тест</button>
+      <button class="ghost" id="newChat" type="button" title="Начать диалог заново">Очистить</button>
+    </div>
+
+    <section class="panel" id="chatPanel" role="tabpanel" aria-labelledby="tabChat">
+      <div class="thread" id="thread"></div>
+      <form class="composer" id="composer">
+        <textarea id="question" rows="2" placeholder="Спросите о материале курса" aria-label="Вопрос наставнику"></textarea>
+        <div class="composer-row">
+          <label class="think" title="Модель сначала рассуждает, потом отвечает: дольше, но точнее">
+            <input type="checkbox" id="think"> Думать
+          </label>
+          <span class="scope" id="scope"></span>
+          <button type="submit" class="primary" id="send">Спросить</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" id="quizPanel" role="tabpanel" aria-labelledby="tabQuiz" hidden>
+      <div class="quiz" id="quiz"></div>
+    </section>
+  </aside>
+</main>
+
+<nav class="mobile-tabs" aria-label="Разделы">
+  <button type="button" data-view="course">Курс</button>
+  <button type="button" data-view="lesson" aria-current="true">Урок</button>
+  <button type="button" data-view="tutor">Наставник</button>
+</nav>
+
+<script src="/assets/marked.min.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

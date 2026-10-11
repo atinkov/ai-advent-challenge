@@ -57,3 +57,6 @@ build/
 /task25-scenario-s1.json
 /task25-scenario-s2.json
 /task25-scenario-*.json.tmp
+
+### day 27 ###
+task27-course-index.json

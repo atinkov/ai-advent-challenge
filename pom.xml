@@ -444,6 +444,24 @@
                 </plugins>
             </build>
         </profile>
+        <!-- mvn -q compile exec:java -Ptask27 -->
+        <profile>
+            <id>task27</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week6.Task27</mainClass>
+                            <!-- the web server runs until Ctrl+C; do not wait for leftover daemon threads -->
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
 </project>
