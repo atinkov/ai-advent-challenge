@@ -494,6 +494,24 @@
                 </plugins>
             </build>
         </profile>
+        <!-- mvn -q compile exec:java -Ptask30 -->
+        <profile>
+            <id>task30</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week6.Task30</mainClass>
+                            <!-- the service runs until Ctrl+C -->
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
 </project>
