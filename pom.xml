@@ -478,6 +478,22 @@
                 </plugins>
             </build>
         </profile>
+        <!-- mvn -q compile exec:java -Ptask29 -->
+        <profile>
+            <id>task29</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week6.Task29</mainClass>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
 </project>
