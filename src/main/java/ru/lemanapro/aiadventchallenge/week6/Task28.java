@@ -41,9 +41,9 @@ import java.util.regex.Pattern;
 public final class Task28 {
 
     private static final Path REPORT = Path.of("task28-local-rag-report.md");
-    private static final Pattern THINK = Pattern.compile("(?s)<think>.*?(</think>|$)");
-    private static final Pattern CITE = Pattern.compile("\\[\\d{1,2}]");
-    private static final Pattern NOT_IN_COURSE = Pattern.compile("(?iu)в материалах курса (этого )?нет|нет в материалах|курс[а-я]* не (содерж|рассматр|охват)|вне курса");
+    static final Pattern THINK = Pattern.compile("(?s)<think>.*?(</think>|$)");
+    static final Pattern CITE = Pattern.compile("\\[\\d{1,2}]");
+    static final Pattern NOT_IN_COURSE = Pattern.compile("(?iu)в материалах курса (этого )?нет|нет в материалах|курс[а-я]* не (содерж|рассматр|охват)|вне курса");
 
     /** Control question: facts = regexes the answer must contain; source = regex over the expected lesson file. */
     record Q(String id, String question, List<String> facts, String source, boolean offTopic) {

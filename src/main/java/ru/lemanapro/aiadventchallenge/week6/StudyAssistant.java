@@ -58,17 +58,21 @@ public final class StudyAssistant {
     public record Quiz(List<Question> questions, List<Source> sources, OllamaClient.ChatResult stats) {
     }
 
-    public record Settings(String model, int numCtx, int topK, int contextChars, int lessonChars) {
+    /** temperature / numPredict apply to answers (ask, explain); the quiz keeps its own 0.7 and no length cap. */
+    public record Settings(String model, int numCtx, int topK, int contextChars, int lessonChars,
+                           double temperature, int numPredict) {
         static Settings fromEnv(String model) {
             return new Settings(model,
                     Integer.parseInt(LlmClient.env("TASK27_NUM_CTX", "8192")),
                     Integer.parseInt(LlmClient.env("TASK27_TOP_K", "5")),
                     Integer.parseInt(LlmClient.env("TASK27_CONTEXT_CHARS", "7000")),
-                    Integer.parseInt(LlmClient.env("TASK27_LESSON_CHARS", "14000")));
+                    Integer.parseInt(LlmClient.env("TASK27_LESSON_CHARS", "14000")),
+                    Double.parseDouble(LlmClient.env("TASK27_TEMPERATURE", "0.3")),
+                    Integer.parseInt(LlmClient.env("TASK27_NUM_PREDICT", "-1")));
         }
     }
 
-    private static final String TUTOR = """
+    static final String TUTOR = """
             Ты — наставник курса «Тестирование производительности на Gatling» (Java, банковское приложение \
             на стенде курса). Помогаешь студенту разобраться в материале.
             Правила:
@@ -77,7 +81,7 @@ public final class StudyAssistant {
             - Не придумывай названия уроков, ссылки и цифры, которых нет во фрагментах.""";
 
     /** Only for questions: in HINT mode a small model latches onto this line even with the assignment in front of it. */
-    private static final String NOT_FOUND_RULE = """
+    static final String NOT_FOUND_RULE = """
 
             - Если во фрагментах ответа нет, так и скажи: «В материалах курса этого нет», и при необходимости \
             ответь кратко из общих знаний, пометив такой ответ «(вне курса)».""";
@@ -262,7 +266,18 @@ public final class StudyAssistant {
                 .append("\n\n").append(hint ? "Сообщение студента: " : "Вопрос: ").append(question)
                 .append(hint ? "" : "\n\n(Ответь по фрагментам, ставь ссылки [n].)");
         messages.add(LlmClient.message("user", user.toString()));
-        return generate(messages, think, 0.3, null, emit);
+        return generate(messages, think, settings.temperature(), null, emit);
+    }
+
+    /** Local retrieval with explicit top-k / char budget: sources + the numbered fragments text (day 29). */
+    public record Context(List<Source> sources, String fragments, long retrievalMs) {
+    }
+
+    public Context context(String question, int topK, int contextChars) throws Exception {
+        long t0 = System.nanoTime();
+        List<RagIndex.Hit> hits = retrieve(question, null, topK);
+        List<Source> sources = sources(hits);
+        return new Context(sources, fragments(hits, sources, contextChars), (System.nanoTime() - t0) / 1_000_000);
     }
 
     /** Retrieval result + the exact chat messages a model gets for a course question (day 28 compares models on it). */
@@ -315,7 +330,7 @@ public final class StudyAssistant {
         List<Map<String, String>> messages = List.of(
                 LlmClient.message("system", TUTOR + NOT_FOUND_RULE),
                 LlmClient.message("user", task + "\n\nУрок «" + lesson.title() + "»:\n\"\"\"\n" + text + "\n\"\"\""));
-        return generate(messages, think, 0.3, null, emit);
+        return generate(messages, think, settings.temperature(), null, emit);
     }
 
     // ---------------------------------------------------------------- quiz
@@ -493,6 +508,9 @@ public final class StudyAssistant {
         Map<String, Object> options = new LinkedHashMap<>();
         options.put("num_ctx", settings.numCtx());
         options.put("temperature", temperature);
+        if (format == null && settings.numPredict() > 0) { // answers only; a capped quiz would be broken JSON
+            options.put("num_predict", settings.numPredict());
+        }
         return ollama.chatStream(settings.model(), messages, options, think, format, d -> {
             if (!d.thinking().isEmpty()) {
                 emit.accept(Map.of("type", "thinking", "text", d.thinking()));
