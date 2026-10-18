@@ -52,21 +52,36 @@ public final class ProjectDocs {
     }
 
     private static final Pattern H1 = Pattern.compile("(?m)^#\\s+(.+?)\\s*$");
-    private static final List<String> EXT = List.of(".md", ".json", ".yaml", ".yml", ".txt");
+    private static final List<String> EXT = List.of(".md", ".json", ".yaml", ".yml", ".txt", ".java");
 
     private final Path root;
     private final Path indexFile;
+    private final List<String> paths;
     private final HttpClient http;
     private final LlmClient.Config cfg;
     private RagIndex index;
     private Embedder embedder;
     private String buildNote = "";
 
+    /** Day 31: documentation only (TASK31_DOC_PATHS, TASK31_INDEX). */
     public ProjectDocs(Path root, HttpClient http, LlmClient.Config cfg) {
+        this(root, http, cfg, docPaths(), LlmClient.env("TASK31_INDEX", "task31-docs-index.json"));
+    }
+
+    /**
+     * Any corpus: paths (files / folders relative to root) and the index file name. Day 32 passes docs + src/main/java
+     * — *.java files are chunked by class members (Chunker "java" kind).
+     */
+    public ProjectDocs(Path root, HttpClient http, LlmClient.Config cfg, List<String> paths, String indexName) {
         this.root = root.toAbsolutePath().normalize();
-        this.indexFile = this.root.resolve(LlmClient.env("TASK31_INDEX", "task31-docs-index.json"));
+        this.indexFile = this.root.resolve(indexName);
         this.http = http;
         this.cfg = cfg;
+        this.paths = List.copyOf(paths);
+    }
+
+    public List<String> paths() {
+        return paths;
     }
 
     public static List<String> docPaths() {
@@ -81,7 +96,7 @@ public final class ProjectDocs {
 
     public List<Chunker.Doc> loadCorpus() throws IOException {
         List<Path> files = new ArrayList<>();
-        for (String p : docPaths()) {
+        for (String p : paths) {
             Path base = root.resolve(p).normalize();
             if (!base.startsWith(root) || !Files.exists(base)) continue;
             if (Files.isDirectory(base)) {
@@ -101,12 +116,13 @@ public final class ProjectDocs {
             String source = root.relativize(f).toString().replace('\\', '/');
             String name = f.getFileName().toString();
             boolean md = name.endsWith(".md");
+            boolean java = name.endsWith(".java");
             String title = name;
             if (md) {
                 Matcher m = H1.matcher(text);
                 if (m.find()) title = m.group(1).replace("`", "").strip();
             }
-            docs.add(new Chunker.Doc(source, title, md ? "md" : "text", text));
+            docs.add(new Chunker.Doc(source, title, md ? "md" : java ? "java" : "text", text));
         }
         return docs;
     }
@@ -120,6 +136,7 @@ public final class ProjectDocs {
     public static String groupOf(String source) {
         String s = source.toLowerCase(Locale.ROOT);
         if (s.equals("readme.md")) return "README";
+        if (s.endsWith(".java")) return "код";
         if (s.contains("schema") || s.endsWith(".json")) return "схемы данных";
         if (s.contains("/api") || s.endsWith(".yaml") || s.endsWith(".yml")) return "API";
         if (s.startsWith("docs/")) return "docs";
@@ -134,7 +151,7 @@ public final class ProjectDocs {
         if (index != null) return index;
         List<Chunker.Doc> docs = loadCorpus();
         if (docs.isEmpty()) {
-            throw new IllegalStateException("Нет документации для индекса: ни одного файла из " + docPaths() + " в " + root);
+            throw new IllegalStateException("Нет документации для индекса: ни одного файла из " + paths + " в " + root);
         }
         String fingerprint = fingerprint(docs);
         Path fpFile = indexFile.resolveSibling(indexFile.getFileName() + ".sha256");
@@ -206,14 +223,23 @@ public final class ProjectDocs {
     // ---------------------------------------------------------------- retrieval
 
     public List<Fragment> retrieve(String question) throws Exception {
+        return retrieve(question, Integer.parseInt(LlmClient.env("TASK31_TOP_K", "5")),
+                Integer.parseInt(LlmClient.env("TASK31_PER_SOURCE", "2")));
+    }
+
+    public List<Fragment> retrieve(String question, int topK, int perSource) throws Exception {
+        return retrieve(question, topK, perSource, source -> true);
+    }
+
+    /** Search only among chunks whose source passes the filter (day 32: documentation and code searched separately). */
+    public List<Fragment> retrieve(String question, int topK, int perSource, java.util.function.Predicate<String> sourceFilter) throws Exception {
         RagIndex idx = index();
-        int topK = Integer.parseInt(LlmClient.env("TASK31_TOP_K", "5"));
-        int perSource = Integer.parseInt(LlmClient.env("TASK31_PER_SOURCE", "2"));
         double minScore = Double.parseDouble(LlmClient.env("TASK31_MIN_SCORE", embedder.isLocal() ? "0.08" : "0.3"));
         double relCut = Double.parseDouble(LlmClient.env("TASK31_RELATIVE_CUT", "0.6"));
 
         float[] q = embedder.embed(List.of(question))[0];
-        List<RagIndex.Hit> hits = idx.search(q, Math.max(20, topK * 4));
+        List<RagIndex.Hit> hits = new ArrayList<>(idx.search(q, Math.max(200, topK * 4)));
+        hits.removeIf(h -> !sourceFilter.test(h.chunk().source()));
         if (hits.isEmpty()) return List.of();
         double best = hits.getFirst().score();
         double cut = Math.max(minScore, relCut * best);

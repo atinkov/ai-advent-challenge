@@ -1,0 +1,117 @@
+openapi: 3.0.3
+info:
+  title: Приватный AI-сервис (день 30, week6/Task30)
+  version: "1.0"
+  description: |
+    Шлюз перед локальной Ollama (Ollama слушает только 127.0.0.1:11434). Запуск: `mvn -q compile exec:java -Ptask30`,
+    по умолчанию слушает 0.0.0.0:8030 (TASK30_HOST, TASK30_PORT). Проверка: `-Dexec.args="check"`.
+    Порядок обработки запроса: API-ключ → rate limit → размер тела → лимит контекста / max_tokens → очередь (N слотов) → Ollama.
+    Лимиты (env): TASK30_API_KEYS="ключ:запросов_в_минуту,…" (иначе ключ генерируется при старте и пишется в task30-api-key.txt),
+    TASK30_RPM=20, TASK30_MAX_CONCURRENT=2, TASK30_QUEUE_SECONDS=60, TASK30_MAX_CONTEXT=6000 токенов (оценка),
+    TASK30_MAX_TOKENS=1024, TASK30_NUM_CTX=8192, тело запроса до 256 КБ, модель — только TASK30_MODEL.
+    Запросы с этого же компьютера (127.0.0.1) можно делать без ключа.
+servers:
+  - url: http://localhost:8030
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      summary: Веб-чат (HTML)
+      description: Ключ вводится один раз, история диалога хранится в браузере, ответ печатается по мере генерации.
+      security: []
+      responses:
+        "200": {description: HTML-страница чата}
+  /health:
+    get:
+      summary: Статус сервиса (без ключа)
+      security: []
+      responses:
+        "200":
+          description: Статус
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok, degraded], description: "degraded — Ollama недоступна"}
+                  model: {type: string, example: "qwen3:8b"}
+                  ollama: {type: string, description: "версия Ollama или unreachable"}
+                  active: {type: integer, description: "генераций сейчас"}
+                  queued: {type: integer, description: "запросов ждут слот"}
+                  served: {type: integer, description: "обслужено с момента запуска"}
+                  limits: {type: object, description: "defaultRpm, maxConcurrent, queueSeconds, maxContext, maxTokens, numCtx"}
+                  keyRequired: {type: boolean}
+  /v1/models:
+    get:
+      summary: Список моделей (OpenAI-формат)
+      responses:
+        "200":
+          description: Одна модель — TASK30_MODEL
+          content:
+            application/json:
+              example: {object: list, data: [{id: "qwen3:8b", object: model, owned_by: local}]}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /v1/chat/completions:
+    post:
+      summary: Чат в формате OpenAI
+      description: stream=false — один JSON-ответ; stream=true — Server-Sent Events (chat.completion.chunk), последний чанк с finish_reason и usage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                model: {type: string, description: "необязательно; любая модель, кроме TASK30_MODEL, → 400"}
+                messages:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    properties:
+                      role: {type: string, enum: [system, user, assistant], description: "другие роли игнорируются"}
+                      content: {type: string}
+                stream: {type: boolean, default: false}
+                max_tokens: {type: integer, description: "молча обрезается до TASK30_MAX_TOKENS"}
+                temperature: {type: number}
+            example:
+              messages: [{role: user, content: "Что такое нагрузочное тестирование?"}]
+              stream: false
+      responses:
+        "200":
+          description: Ответ модели
+          content:
+            application/json:
+              example:
+                id: chatcmpl-123
+                object: chat.completion
+                model: "qwen3:8b"
+                choices: [{index: 0, message: {role: assistant, content: "…"}, finish_reason: stop}]
+                usage: {prompt_tokens: 20, completion_tokens: 120, total_tokens: 140}
+            text/event-stream:
+              schema: {type: string, description: "data: {chat.completion.chunk}\\n\\n … data: [DONE]"}
+        "400": {description: "invalid_json — тело не JSON; invalid_request — пустой messages; model_not_allowed — чужая модель", content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {description: "not_found — нет такого адреса", content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "413": {description: "request_too_large — тело > 256 КБ; context_length_exceeded — промпт больше TASK30_MAX_CONTEXT токенов", content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "429": {description: "rate_limit_exceeded — превышен лимит запросов в минуту на ключ; заголовок Retry-After (секунды)", content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+        "503": {description: "очередь: свободный слот не освободился за TASK30_QUEUE_SECONDS; заголовок Retry-After: 10", content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, description: "Authorization: Bearer <ключ>"}
+  responses:
+    Unauthorized:
+      description: "missing_api_key — ключ не указан; invalid_api_key — неверный ключ"
+      content: {application/json: {schema: {$ref: "#/components/schemas/Error"}}}
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message: {type: string}
+            type: {type: string}
+            code: {type: string, example: context_length_exceeded}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-context.schema.json",
+  "title": "agent-context.json — состояние LlmAgent (дни 6-10)",
+  "description": "Пишет LlmAgent.save() после каждого ответа, читает при старте (файл задаётся AGENT_CONTEXT_FILE). Текущая версия 4: ветки диалога + чекпоинт. Старые форматы (v1 — массив сообщений, v2/v3 — {history, summary, stats}) читаются и мигрируют.",
+  "type": "object",
+  "required": ["version", "branches", "active"],
+  "$defs": {
+    "message": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {"role": {"enum": ["system", "user", "assistant"]}, "content": {"type": "string", "minLength": 1}}
+    },
+    "branch": {
+      "type": "object",
+      "required": ["history"],
+      "properties": {
+        "history": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/message"}, "description": "Первое сообщение обязательно system"},
+        "summary": {"type": ["string", "null"], "description": "Сжатая сводка старых сообщений (сжатие истории, день 9)"},
+        "facts": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Ключевые факты (стратегия FACTS, день 10)"}
+      }
+    }
+  },
+  "properties": {
+    "version": {"const": 4},
+    "branches": {"type": "object", "additionalProperties": {"$ref": "#/$defs/branch"}, "description": "Ветки диалога по имени; основная — main"},
+    "active": {"type": "string", "description": "Имя активной ветки"},
+    "checkpoint": {"$ref": "#/$defs/branch", "description": "Чекпоинт, от которого создаются ветки"},
+    "stats": {
+      "type": "object",
+      "properties": {
+        "prompt_tokens": {"type": "integer"},
+        "completion_tokens": {"type": "integer"},
+        "max_prompt_tokens": {"type": "integer"},
+        "turns": {"type": "integer"}
+      }
+    }
+  }
+}

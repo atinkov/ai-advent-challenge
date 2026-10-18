@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rag-index.schema.json",
+  "title": "Индекс RAG — task21-index-{fixed,structure}.json, task27-course-index.json, task31-docs-index.json",
+  "description": "Формат week5/RagIndex (save/load). Векторы нормализованы, косинус = скалярное произведение; округлены до 5 знаков. Файлы в .gitignore и пересобираются автоматически.",
+  "type": "object",
+  "required": ["version", "meta", "chunks"],
+  "properties": {
+    "version": {"const": 1},
+    "meta": {
+      "type": "object",
+      "properties": {
+        "strategy": {"type": "string", "enum": ["fixed", "structure"]},
+        "params": {"type": "string", "description": "Параметры нарезки, например size=1000, overlap=150 или maxChars=1500"},
+        "embedder": {"type": "string", "description": "api:<модель> или local-hash-<dim>; запросы надо эмбеддить тем же эмбеддером"},
+        "dim": {"type": "integer", "description": "Размерность векторов"},
+        "createdAt": {"type": "string", "description": "yyyy-MM-dd HH:mm:ss"},
+        "documents": {"type": "integer", "description": "Сколько документов в корпусе"},
+        "corpusChars": {"type": "integer", "description": "Суммарный размер корпуса в символах"},
+        "embedderState": {"type": "object", "description": "Состояние эмбеддера для восстановления: {dim} для API, {dim, idf[]} для local-hash"}
+      }
+    },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["chunkId", "source", "text", "vector"],
+        "properties": {
+          "chunkId": {"type": "string", "pattern": "^[fs]-\\d{4,}$", "description": "f-0001 (fixed) или s-0001 (structure)"},
+          "source": {"type": "string", "description": "Путь файла относительно корня, например docs/api/mcp-tools.md"},
+          "title": {"type": "string", "description": "Заголовок H1 Markdown-файла или имя файла"},
+          "section": {"type": "string", "description": "Путь заголовков «Раздел › Подраздел» или Class.member"},
+          "strategy": {"type": "string"},
+          "ordinal": {"type": "integer", "description": "Номер фрагмента внутри документа, с 1"},
+          "startLine": {"type": "integer"},
+          "endLine": {"type": "integer"},
+          "lead": {"type": "string", "description": "Шапка разрезанной таблицы (для structure)"},
+          "text": {"type": "string"},
+          "vector": {"type": "array", "items": {"type": "number"}}
+        }
+      }
+    }
+  }
+}

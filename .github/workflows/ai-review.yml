@@ -1,0 +1,53 @@
+# День 32: автоматическое AI-ревью кода на каждый pull request.
+# Шаги: checkout всей истории → JDK 25 → Task32 review (diff base...head + RAG по документации и коду → LLM)
+#       → ревью публикуется комментарием в PR (один комментарий, обновляется при новых коммитах).
+# Нужно в настройках репозитория (Settings → Secrets and variables → Actions):
+#   Secrets:   LLM_API_KEY — ключ LLM; LLM_BASE_URL, HINDSIGHT_API_LLM_MODEL — необязательно (по умолчанию как в LlmClient)
+#   Variables: AI_REVIEW_RUNNER — необязательно, например self-hosted, если LLM-шлюз доступен только из внутренней сети
+#              (только Variable: контекст secrets в runs-on недоступен)
+name: AI code review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    # черновики не ревьюим; PR из форков не получают секреты — для них ревью не запускается
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ vars.AI_REVIEW_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout (вся история — нужна для git merge-base / diff base...head)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '25'
+          cache: maven
+
+      - name: AI review (Task32)
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          HINDSIGHT_API_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          HINDSIGHT_API_LLM_MODEL: ${{ secrets.HINDSIGHT_API_LLM_MODEL }}
+        run: mvn -q -B compile exec:java -Ptask32 -Dexec.args="review --base ${{ github.event.pull_request.base.sha }} --head ${{ github.event.pull_request.head.sha }} --out target/ai-review.md"
+
+      - name: Публикация ревью в PR
+        if: always() && hashFiles('target/ai-review.md') != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: ai-review
+          path: target/ai-review.md

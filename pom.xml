@@ -529,6 +529,23 @@
                 </plugins>
             </build>
         </profile>
+        <!-- mvn -q compile exec:java -Ptask32 -->
+        <profile>
+            <id>task32</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <configuration>
+                            <mainClass>ru.lemanapro.aiadventchallenge.week7.Task32</mainClass>
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
 </project>

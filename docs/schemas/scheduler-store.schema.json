@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scheduler-store.schema.json",
+  "title": "task18-scheduler.json / task20-scheduler.json — хранилище SchedulerMcpServer",
+  "description": "Задания и каждое их выполнение (Task18.SchedulerMcpServer.Store). Переживает перезапуск (task18); событий хранится не больше 20 000.",
+  "type": "object",
+  "required": ["version", "jobs", "events"],
+  "properties": {
+    "version": {"const": 1},
+    "nextJobNo": {"type": "integer", "description": "Счётчик для id следующего задания"},
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string", "description": "Уникальное имя, например repo-monitor"},
+          "kind": {"enum": ["git_snapshot", "reminder"]},
+          "intervalSeconds": {"type": "integer", "minimum": 5, "maximum": 86400},
+          "message": {"type": ["string", "null"], "description": "Текст напоминания (kind=reminder)"},
+          "once": {"type": "boolean"},
+          "active": {"type": "boolean"},
+          "createdAt": {"type": "string"},
+          "lastRunAt": {"type": ["string", "null"]},
+          "runs": {"type": "integer"}
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {"type": "string"},
+          "jobName": {"type": "string"},
+          "kind": {"enum": ["git_snapshot", "reminder"]},
+          "at": {"type": "string"},
+          "data": {"type": "object", "description": "Снимок репозитория (git_snapshot) или текст напоминания (reminder)"}
+        }
+      }
+    }
+  }
+}

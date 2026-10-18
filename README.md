@@ -13,7 +13,7 @@
 | 4 | 16–20 | MCP: подключение, свой Git MCP-сервер, планировщик, композиция инструментов, оркестрация нескольких серверов | `week4` |
 | 5 | 21–25 | RAG: индексация, первый RAG-запрос, реранкинг, цитаты, чат с RAG и памятью задачи | `week5` |
 | 6 | 26–30 | локальная LLM (Ollama + Qwen): приложение, локальный RAG, оптимизация, приватный AI-сервис | `week6` |
-| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help` | `week7` |
+| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help`; автоматическое AI-ревью PR (GitHub Action) | `week7` |
 
 ## Быстрый старт
 
@@ -58,17 +58,32 @@ mvn -q exec:java -Ptask31 -Dexec.args="/help как добавить новый 
 Команды: `/help`, `/help <вопрос>` (или просто вопрос), `/branch`, `/status`, `/files [маска|папка]`, `/diff [путь]`,
 `/docs`, `/reindex`, `/tools`, `/exit`. Подробно — [docs/dev-assistant.md](docs/dev-assistant.md).
 
+## AI-ревью pull request (день 32)
+
+На каждый PR GitHub Action (`.github/workflows/ai-review.yml`) запускает `Task32 review`: diff и изменённые файлы PR +
+RAG по документации и коду проекта → LLM → комментарий в PR с разделами «Потенциальные баги», «Архитектурные проблемы»,
+«Рекомендации». Для работы в репозитории нужен секрет `LLM_API_KEY`.
+
+```bash
+mvn -q compile exec:java -Ptask32                                        # проверка задания → task32-code-review-report.md
+mvn -q exec:java -Ptask32 -Dexec.args="review --base main --head HEAD"  # ревью своей ветки локально
+```
+
+Подробно — [docs/code-review.md](docs/code-review.md).
+
 ## Структура
 
 ```
 AIAdventChallenge/
-├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task31
+├── .github/workflows/       ai-review.yml — AI-ревью на каждый pull request (день 32)
+├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task32
 ├── .env                     конфигурация LLM и ключ (gitignored)
 ├── README.md                этот файл
 ├── AGENTS.md                подробная база знаний проекта: каждый день, соглашения, команды
 ├── docs/                    документация для людей и для RAG ассистента
 │   ├── architecture.md      слои, общие компоненты, пакеты, поток данных
 │   ├── dev-assistant.md     ассистент разработчика (день 31)
+│   ├── code-review.md       автоматическое AI-ревью PR (день 32)
 │   ├── data-schemas.md      какие JSON-файлы пишет проект и их форматы
 │   ├── schemas/             JSON Schema файлов данных
 │   └── api/                 HTTP API (OpenAPI) и каталог MCP-инструментов
