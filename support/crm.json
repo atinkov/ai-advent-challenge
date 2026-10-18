@@ -1,0 +1,98 @@
+{
+  "users": [
+    {
+      "id": "U-001",
+      "name": "Иван Петров",
+      "email": "ivan.petrov@example.com",
+      "company": "ООО «Ромашка»",
+      "plan": "Pro",
+      "authMethod": "password",
+      "twoFactor": false,
+      "accountStatus": "locked",
+      "lockedUntil": "2026-10-19T02:15:00+03:00",
+      "failedLoginAttempts": 5,
+      "lastLogin": "2026-10-12T09:41:00+03:00"
+    },
+    {
+      "id": "U-002",
+      "name": "Мария Соколова",
+      "email": "m.sokolova@acme.example",
+      "company": "Acme Corp",
+      "plan": "Enterprise",
+      "authMethod": "sso",
+      "ssoProvider": "Okta (SAML)",
+      "twoFactor": false,
+      "accountStatus": "active",
+      "failedLoginAttempts": 0,
+      "lastLogin": "2026-10-15T18:02:00+03:00"
+    },
+    {
+      "id": "U-003",
+      "name": "Олег Ким",
+      "email": "oleg.kim@example.com",
+      "company": "—",
+      "plan": "Free",
+      "authMethod": "password",
+      "twoFactor": true,
+      "twoFactorMethod": "totp",
+      "accountStatus": "active",
+      "failedLoginAttempts": 0,
+      "lastLogin": "2026-10-18T22:10:00+03:00"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "T-1001",
+      "userId": "U-001",
+      "subject": "Не могу войти в аккаунт",
+      "description": "С утра не пускает в TaskFlow, пишет «Вход временно недоступен». Пароль точно правильный.",
+      "status": "open",
+      "priority": "high",
+      "createdAt": "2026-10-19T01:40:00+03:00",
+      "events": [
+        "01:38 — 5 неудачных попыток входа по паролю подряд",
+        "01:38 — аккаунт автоматически заблокирован на 30 минут (политика безопасности)",
+        "01:40 — пользователь создал тикет"
+      ]
+    },
+    {
+      "id": "T-1002",
+      "userId": "U-002",
+      "subject": "Сотрудники не могут войти через SSO",
+      "description": "С сегодняшнего дня никто из компании не может войти через Okta, после редиректа ошибка «SAML response signature is invalid».",
+      "status": "open",
+      "priority": "critical",
+      "createdAt": "2026-10-19T09:05:00+03:00",
+      "events": [
+        "08:55 — 37 ошибок SAML от домена acme.example: invalid signature",
+        "08:55 — сертификат IdP в настройках SSO компании: срок действия истёк 2026-10-18",
+        "09:05 — администратор компании создал тикет"
+      ]
+    },
+    {
+      "id": "T-1003",
+      "userId": "U-003",
+      "subject": "Код из приложения-аутентификатора не подходит",
+      "description": "Ввожу 6-значный код из Google Authenticator — пишет «Неверный код». Пароль принимается.",
+      "status": "open",
+      "priority": "medium",
+      "createdAt": "2026-10-18T22:20:00+03:00",
+      "events": [
+        "22:12 — 4 неверных TOTP-кода подряд, пароль верный",
+        "22:12 — время устройства пользователя отличается от серверного на ~3 минуты (по меткам запросов)"
+      ]
+    },
+    {
+      "id": "T-1004",
+      "userId": "U-003",
+      "subject": "Как выгрузить задачи в Excel?",
+      "description": "Хочу выгрузить все задачи проекта в файл.",
+      "status": "closed",
+      "priority": "low",
+      "createdAt": "2026-10-10T12:00:00+03:00",
+      "events": [
+        "12:30 — ответ поддержки: экспорт CSV доступен на всех тарифах"
+      ]
+    }
+  ]
+}
