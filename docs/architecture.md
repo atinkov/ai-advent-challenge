@@ -32,6 +32,8 @@ UI / сценарий      weekN/TaskN.java         — main(), CLI или HTTP-
 | `week5/RagIndex` | индекс: чанки + метаданные + векторы, JSON-файл, косинусный поиск | дни 21–25, 31 |
 | `week5/RagPipeline` | retrieve (rewrite → search → rerank/фильтр) + ответы с проверкой цитат | дни 22–25 |
 | `week6/OllamaClient` | нативный API Ollama: версии, модели, `/api/chat` со стримингом и метриками | дни 26–30 |
+| `week7/ProjectDocs` | RAG-корпус по путям (документация и/или код) с индексом и автопересборкой по sha256; поиск с фильтром по источнику | дни 31–32 |
+| `week7/CodeReviewer` | ревью PR: diff `base...head` + изменённые файлы → RAG по документации и коду → LLM (JSON) → проверка замечаний → Markdown-комментарий | день 32 |
 
 ## Пакеты по неделям
 
@@ -41,7 +43,7 @@ UI / сценарий      weekN/TaskN.java         — main(), CLI или HTTP-
 - `week4` — дни 16–20, MCP: клиент на официальном MCP Java SDK, собственные stdio-серверы (`GitMcpServer`, `SchedulerMcpServer`, `DocsPipelineMcpServer`).
 - `week5` — дни 21–25, RAG по самому проекту.
 - `week6` — дни 26–30, локальная LLM: приложение «Наставник НТ» (порт 8027), приватный AI-сервис (порт 8030).
-- `week7` — день 31+, ассистент разработчика: `ProjectMcpServer`, `ProjectDocs`, `DevAssistant`, `Task31`.
+- `week7` — день 31+: ассистент разработчика (`ProjectMcpServer`, `ProjectDocs`, `DevAssistant`, `Task31`) и AI-ревью PR (`CodeReviewer`, `Task32` + `.github/workflows/ai-review.yml`).
 
 ## Поток данных ассистента разработчика (день 31)
 

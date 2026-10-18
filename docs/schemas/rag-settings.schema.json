@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task23-rag-settings.schema.json",
+  "title": "task23-rag-settings.json — откалиброванные настройки retrieval (день 23)",
+  "description": "Пишет Task23 (RagPipeline.Settings.save), читают дни 24-25 через Settings.forIndex: значения по умолчанию < этот файл (только если embedder и strategy совпадают с индексом) < переменные окружения RAG_*.",
+  "type": "object",
+  "required": ["topKBefore", "topKAfter", "rerank", "minSimilarity", "relativeCut", "minRerank", "rewrite", "embedder", "strategy"],
+  "properties": {
+    "topKBefore": {"type": "integer", "minimum": 1, "default": 20, "description": "Сколько кандидатов брать из векторного поиска до второго этапа. env RAG_TOP_K_BEFORE"},
+    "topKAfter": {"type": "integer", "minimum": 1, "default": 5, "description": "Сколько фрагментов оставить в контексте после реранкинга. env RAG_TOP_K"},
+    "rerank": {"type": "string", "enum": ["NONE", "THRESHOLD", "HEURISTIC", "LLM"], "default": "LLM",
+      "description": "Второй этап: NONE — без фильтра; THRESHOLD — косинус ≥ max(minSimilarity, relativeCut × лучший); HEURISTIC — порог + 0.5 × cos/лучший + 0.5 × IDF-доля слов запроса, отсечка minRerank; LLM — модель оценивает кандидатов 0-10, отсечка minRerank × 10. env RAG_RERANK"},
+    "minSimilarity": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.30,
+      "description": "Абсолютный порог косинусного сходства запроса и фрагмента. Калибруется Task23 на контрольных вопросах; зависит от эмбеддера (0.12 по умолчанию для local-hash, 0.30 для API-модели). env RAG_MIN_SIMILARITY"},
+    "relativeCut": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.6, "description": "Относительный порог: фрагмент должен набрать не меньше этой доли от лучшего косинуса. env RAG_RELATIVE_CUT"},
+    "minRerank": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5, "description": "Порог оценки реранкера (HEURISTIC — 0..1, LLM — доля от 10). env RAG_MIN_RERANK"},
+    "rewrite": {"type": "boolean", "default": true, "description": "Переписывать ли запрос LLM-ом в 2-3 поисковых запроса (RU + EN с идентификаторами). env RAG_REWRITE"},
+    "embedder": {"type": "string", "description": "Эмбеддер индекса, для которого откалиброваны пороги: api:<модель> или local-hash-<dim>", "examples": ["api:qwen3-vl-embedding-8b", "local-hash-2048"]},
+    "strategy": {"type": "string", "enum": ["fixed", "structure"], "description": "Стратегия нарезки индекса"},
+    "calibrated": {"type": "string", "description": "Когда выполнена калибровка, yyyy-MM-dd HH:mm:ss"}
+  },
+  "additionalProperties": false,
+  "examples": [{
+    "topKBefore": 20, "topKAfter": 5, "rerank": "LLM", "minSimilarity": 0.59, "relativeCut": 0.6, "minRerank": 0.5,
+    "rewrite": true, "embedder": "api:qwen3-vl-embedding-8b", "strategy": "structure", "calibrated": "2026-10-04 23:36:47"
+  }]
+}
