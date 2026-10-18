@@ -16,13 +16,13 @@ import java.util.Set;
  * Week 4 helper: launch parameters for a stdio MCP server implemented in this project
  * (a class with its own main()), started as a separate JVM with the same classpath.
  */
-final class McpLaunch {
+public final class McpLaunch {
 
     private McpLaunch() {
     }
 
     /** `java -cp <project classpath> <serverMain> args...` */
-    static ServerParameters javaServer(Class<?> serverMain, String... args) {
+    public static ServerParameters javaServer(Class<?> serverMain, String... args) {
         String javaBin = ProcessHandle.current().info().command()
                 .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         List<String> all = new ArrayList<>(List.of("-cp", runtimeClasspath(), serverMain.getName()));
@@ -31,7 +31,7 @@ final class McpLaunch {
     }
 
     /** The command line for logs/reports, with the (very long) classpath collapsed. */
-    static String display(ServerParameters params) {
+    public static String display(ServerParameters params) {
         return (params.getCommand() + " " + String.join(" ", params.getArgs()))
                 .replaceAll("-cp \\S+", "-cp <classpath проекта>");
     }
