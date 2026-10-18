@@ -34,12 +34,12 @@ import java.util.regex.Pattern;
  * a <tool_call> block in plain content (Qwen without a tool parser) is executed in any mode;
  * <think> blocks are stripped.
  */
-final class McpToolAgent implements AutoCloseable {
+public final class McpToolAgent implements AutoCloseable {
 
     static final int MAX_TOOL_STEPS = 6;
 
     /** Where tools come from and where calls go. */
-    interface ToolRouter extends AutoCloseable {
+    public interface ToolRouter extends AutoCloseable {
         List<McpSchema.Tool> tools();
 
         McpSchema.CallToolResult call(String toolName, Map<String, Object> args);
@@ -53,11 +53,11 @@ final class McpToolAgent implements AutoCloseable {
         void close();
     }
 
-    record ToolCallTrace(String tool, String argumentsJson, boolean isError, String resultPreview, long millis,
+    public record ToolCallTrace(String tool, String argumentsJson, boolean isError, String resultPreview, long millis,
                          String server) {
     }
 
-    record AgentAnswer(String text, List<ToolCallTrace> calls, int llmRequests, String mode) {
+    public record AgentAnswer(String text, List<ToolCallTrace> calls, int llmRequests, String mode) {
     }
 
     enum Mode { NATIVE, PROMPT }
@@ -79,7 +79,7 @@ final class McpToolAgent implements AutoCloseable {
     private int maxToolSteps = MAX_TOOL_STEPS;
 
     /** One MCP server (days 17-19). */
-    McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting, String basePrompt) {
+    public McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting, String basePrompt) {
         this(cfg, singleServer(mcp), modeSetting, basePrompt);
     }
 
@@ -87,7 +87,7 @@ final class McpToolAgent implements AutoCloseable {
      * @param modeSetting "auto" | "native" | "prompt"
      * @param basePrompt  task-specific system prompt (tool descriptions are added automatically in prompt mode)
      */
-    McpToolAgent(LlmClient.Config cfg, ToolRouter router, String modeSetting, String basePrompt) {
+    public McpToolAgent(LlmClient.Config cfg, ToolRouter router, String modeSetting, String basePrompt) {
         this.cfg = cfg;
         this.router = router;
         this.basePrompt = basePrompt;
@@ -103,12 +103,12 @@ final class McpToolAgent implements AutoCloseable {
         this.mode = "prompt".equalsIgnoreCase(modeSetting) ? Mode.PROMPT : Mode.NATIVE;
     }
 
-    McpToolAgent maxToolSteps(int n) {
+    public McpToolAgent maxToolSteps(int n) {
         this.maxToolSteps = n;
         return this;
     }
 
-    List<McpSchema.Tool> tools() {
+    public List<McpSchema.Tool> tools() {
         return tools;
     }
 
@@ -139,7 +139,7 @@ final class McpToolAgent implements AutoCloseable {
     }
 
     /** One-shot question in a fresh dialogue. */
-    AgentAnswer ask(String question) throws Exception {
+    public AgentAnswer ask(String question) throws Exception {
         return conversation().ask(question);
     }
 
@@ -304,7 +304,7 @@ final class McpToolAgent implements AutoCloseable {
         return m;
     }
 
-    static String textOf(McpSchema.CallToolResult r) {
+    public static String textOf(McpSchema.CallToolResult r) {
         StringBuilder sb = new StringBuilder();
         for (McpSchema.Content c : r.content()) {
             if (c instanceof McpSchema.TextContent t) sb.append(t.text());
