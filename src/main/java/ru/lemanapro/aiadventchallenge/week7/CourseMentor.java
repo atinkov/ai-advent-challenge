@@ -70,11 +70,22 @@ public final class CourseMentor {
 
     // ================================================================ course structure (no LLM)
 
-    public record Requirement(String id, String text) {
+    /** optional = «(дополнительно)» step: shown and graded, but not needed for «зачтено». */
+    public record Requirement(String id, String text, boolean optional) {
+        Requirement(String id, String text) {
+            this(id, text, text.matches("(?is).*\\(дополнительно\\).*"));
+        }
     }
 
-    public record Assignment(String path, String title, String lessonPath, List<String> goals, List<Requirement> requirements,
-                             List<String> criteria, String text) {
+    /**
+     * kind: "practice" (code), "theory" (answer as text). text = what the student sees (no reference answers);
+     * reference = reference answers / «для проверяющего» blocks of the course — for grading only, never for hints.
+     */
+    public record Assignment(String path, String title, String lessonPath, String kind, List<String> goals, List<String> preconditions,
+                             List<Requirement> requirements, List<String> criteria, String text, String reference) {
+        public boolean practice() {
+            return kind.equals("practice");
+        }
     }
 
     /** Files of the course that are assignments: «… Задание …» / «… Задания …» inside a numbered module. */
@@ -118,31 +129,96 @@ public final class CourseMentor {
         throw new IOException(what + " «" + query + "» неоднозначно: " + String.join("; ", hits) + " — уточните модуль, например 02/" + q);
     }
 
-    /** Parses the assignment file: requirements = numbered items + bullets + paragraphs that demand something, of «Требования». */
+    /**
+     * Parses the assignment file into gradable requirements R1…Rn:
+     *   steps — «## / ### Шаг N», «## Задание N», «## Часть N» sections: one requirement per top-level numbered item of the
+     *           section, or one per section when it has none («Шаг 8 (дополнительно)» → optional);
+     *   else «Требования» — numbered + bulleted items + paragraphs that demand something (02/12.1);
+     *   else «Критерии …» items.
+     * When steps exist, «Требования» are preconditions («стенд развёрнут»), passed as context, not graded.
+     * Reference answers ({% cut %}, <details>, «Ответы для самопроверки», «Для проверяющего») are cut from the student-facing
+     * text and kept for the reviewer.
+     */
     public Assignment assignment(String path) throws IOException {
-        String text = course.read(path);
-        String title = text.lines().filter(l -> l.startsWith("# ")).findFirst().orElse(path).replaceFirst("^#\\s+", "");
-        Matcher lm = Pattern.compile("\\*\\*К уроку:\\*\\*\\s*\\[[^\\]]*]\\(<?([^)>]+)>?\\)").matcher(text);
+        String raw = course.read(path);
+        StringBuilder ref = new StringBuilder();
+        String text = raw.replaceAll("(?s)<!-- nav:start -->.*?<!-- nav:end -->", "");
+        text = cut(text, Pattern.compile("(?s)\\{%\\s*cut[^%]*%}(.*?)\\{%\\s*endcut\\s*%}"), ref);
+        text = cut(text, Pattern.compile("(?s)<details>(.*?)</details>"), ref);
+        text = cut(text, Pattern.compile("(?ms)^\\*\\*Ответы?\\*\\*\\s*\\n(.*?)(?=^#{2,3} |\\z)"), ref);
+        text = cut(text, Pattern.compile("(?ms)^## (?:Ответы для самопроверки|Для проверяющего[^\\n]*)\\n(.*?)(?=^## |\\z)"), ref);
+        String title = raw.lines().filter(l -> l.startsWith("# ")).findFirst().orElse(path).replaceFirst("^#\\s+", "");
+        Matcher lm = Pattern.compile("\\*\\*К уроку:\\*\\*\\s*\\[[^\\]]*]\\(<?([^)>]+)>?\\)").matcher(raw);
         String lesson = null;
         if (lm.find()) lesson = Path.of(ProjectFiles.parent(path)).resolve(lm.group(1)).normalize().toString().replace('\\', '/');
         if (lesson == null || !course.exists(lesson)) lesson = parentLesson(path);
         Map<String, String> sections = sections(text);
         List<String> goals = items(sections.getOrDefault("Чему научимся по итогу прохождения урока", ""));
+        List<String> criteria = items(firstSection(sections, "Критерии успешного прохождения", "Критерии готовности"));
         List<Requirement> reqs = new ArrayList<>();
-        String reqText = firstSection(sections, "Требования", "Шаги задания", "Как устроено задание");
         int n = 1;
+        for (String[] step : steps(text)) {
+            List<String> top = topItems(step[1]);
+            // «Шаг N» of a practice task = one gradable unit; «Задание N» / «Часть N» of a theory task = one per question
+            if (top.isEmpty() || step[0].startsWith("Шаг")) {
+                String body = step[1].replaceAll("(?s)```.*?```", " ").replaceAll("(?m)^\\|.*$", "").replaceAll("(?m)^#+.*$", "")
+                        .replaceAll("\\s+", " ").strip();
+                reqs.add(new Requirement("R" + n++, step[0] + ": " + ProjectFiles.clip(body, 350)));
+            } else {
+                for (String it : top) reqs.add(new Requirement("R" + n++, step[0] + " — " + it, step[0].matches("(?i).*\\(дополнительно\\).*")));
+            }
+        }
+        String reqText = firstSection(sections, "Требования");
+        List<String> pre = new ArrayList<>();
         for (String block : reqText.split("\\n\\s*\\n")) {
             String b = block.strip();
             if (b.isEmpty()) continue;
             List<String> list = items(b);
-            if (!list.isEmpty()) {
-                for (String it : list) reqs.add(new Requirement("R" + n++, it));
-            } else if (b.matches("(?s).*(нужно|необходимо|должн|обоснова|добавля).*") && !b.startsWith("|")) {
-                reqs.add(new Requirement("R" + n++, b.replaceAll("\\s+", " ")));
-            }
+            if (!list.isEmpty()) pre.addAll(list);
+            else if (b.matches("(?s).*(нужно|необходимо|должн|обоснова|добавля).*") && !b.startsWith("|")) pre.add(b.replaceAll("\\s+", " "));
         }
-        List<String> criteria = items(firstSection(sections, "Критерии успешного прохождения", "Критерии готовности"));
-        return new Assignment(path, title, lesson, goals, reqs, criteria, text);
+        if (reqs.isEmpty()) {
+            for (String p : pre) reqs.add(new Requirement("R" + n++, p));
+            pre = List.of();
+        }
+        if (reqs.isEmpty()) for (String c : criteria) reqs.add(new Requirement("R" + n++, c));
+        String kind = sections.containsKey("Требования") || text.contains("```java") || raw.contains("Шаги задания") ? "practice" : "theory";
+        return new Assignment(path, title, lesson, kind, goals, pre, reqs, criteria, text.strip(), ref.toString().strip());
+    }
+
+    private static String cut(String text, Pattern p, StringBuilder ref) {
+        Matcher m = p.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            ref.append(m.group(1).strip()).append("\n\n");
+            m.appendReplacement(sb, "");
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    /** «## / ### Шаг|Задание|Часть N …» → [title, body up to the next heading of the same or higher level]. */
+    static List<String[]> steps(String text) {
+        List<String[]> out = new ArrayList<>();
+        String[] lines = text.split("\n", -1);
+        Pattern h = Pattern.compile("^(#{2,3})\\s+((?:Шаг|Задание|Часть)\\s+\\d+.*)$");
+        boolean fence = false;
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].strip().startsWith("```")) fence = !fence;
+            Matcher m = h.matcher(lines[i]);
+            if (fence || !m.matches()) continue;
+            int level = m.group(1).length();
+            StringBuilder body = new StringBuilder();
+            boolean f2 = false;
+            for (int j = i + 1; j < lines.length; j++) {
+                if (lines[j].strip().startsWith("```")) f2 = !f2;
+                Matcher hh = Pattern.compile("^(#{1,6})\\s").matcher(lines[j]);
+                if (!f2 && hh.find() && hh.group(1).length() <= level) break;
+                body.append(lines[j]).append('\n');
+            }
+            out.add(new String[]{m.group(2).replace("\\", "").strip(), body.toString()});
+        }
+        return out;
     }
 
     private String parentLesson(String assignmentPath) throws IOException {
@@ -178,6 +254,29 @@ public final class CourseMentor {
     private static String firstSection(Map<String, String> s, String... names) {
         for (String n : names) if (s.containsKey(n)) return s.get(n);
         return "";
+    }
+
+    /** Top-level numbered items only («1. **Описание.** …»), nested bullets folded into their item; tables skipped. */
+    static List<String> topItems(String block) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = null;
+        boolean fence = false;
+        for (String line : block.split("\n")) {
+            if (line.strip().startsWith("```")) fence = !fence;
+            if (fence) continue;
+            Matcher m = Pattern.compile("^(\\d+)\\.\\s+(.*)").matcher(line);
+            if (m.matches()) {
+                if (cur != null) out.add(ProjectFiles.clip(cur.toString().strip(), 400));
+                cur = new StringBuilder(m.group(2));
+            } else if (cur != null && line.matches("^\\s{2,}[*-]\\s+.*")) {
+                cur.append("; ").append(line.strip().replaceFirst("^[*-]\\s+", ""));
+            } else if (line.startsWith("#")) {
+                if (cur != null) out.add(ProjectFiles.clip(cur.toString().strip(), 400));
+                cur = null;
+            }
+        }
+        if (cur != null) out.add(ProjectFiles.clip(cur.toString().strip(), 400));
+        return out;
     }
 
     /** Numbered and bulleted list items (continuation lines joined). */
@@ -258,11 +357,11 @@ public final class CourseMentor {
             for (Path p : walk.filter(Files::isRegularFile).sorted().toList()) {
                 String rel = dir.relativize(p).toString().replace('\\', '/');
                 if (rel.matches("(^|.*/)(target|build|\\.git|\\.idea|node_modules)/.*")) continue;
-                if (!rel.matches("(?i).*\\.(java|kt|scala|conf|properties|csv)$")) continue;
+                if (!rel.matches("(?i).*\\.(java|kt|scala|conf|properties|csv|md|txt)$")) continue;
                 out.add(new SourceFile(rel, Files.readString(p, StandardCharsets.UTF_8)));
             }
         }
-        if (out.isEmpty()) throw new IOException("в " + dir + " нет файлов с кодом (*.java, *.kt, *.scala)");
+        if (out.isEmpty()) throw new IOException("в " + dir + " нет файлов решения (*.java, *.kt, *.scala, *.md, *.txt)");
         return out;
     }
 
@@ -276,12 +375,16 @@ public final class CourseMentor {
             marks.add(new int[]{m.start(), m.end()});
             names.add(m.group(1));
         }
-        if (marks.isEmpty()) return List.of(new SourceFile("Solution.java", text));
+        if (marks.isEmpty()) return List.of(new SourceFile(looksLikeCode(text) ? "Solution.java" : "Ответ.md", text));
         for (int i = 0; i < marks.size(); i++) {
             int end = i + 1 < marks.size() ? marks.get(i + 1)[0] : text.length();
             out.add(new SourceFile(names.get(i), text.substring(marks.get(i)[1], end).strip() + "\n"));
         }
         return out;
+    }
+
+    static boolean looksLikeCode(String text) {
+        return Pattern.compile("(?m)^\\s*(package |import |public |class |private |\\.check\\(|setUp\\()").matcher(text).find();
     }
 
     static String numbered(List<SourceFile> files) {
@@ -319,11 +422,13 @@ public final class CourseMentor {
 
     static final String REVIEW_PROMPT = """
             Ты — преподаватель курса нагрузочного тестирования на Gatling (Java) и проверяешь домашнее задание студента.
-            Оцени КАЖДОЕ требование задания (R1…Rn) по коду студента:
-              met     — выполнено полностью; обязательно приведи доказательство: файл, номер строки и ДОСЛОВНУЮ цитату строки кода;
+            Решение — код (практика) или текстовый ответ (теоретическое задание: таблицы, расчёты, рассуждения).
+            Оцени КАЖДОЕ требование задания (R1…Rn) по решению студента:
+              met     — выполнено полностью и по существу верно; обязательно приведи доказательство: файл, номер строки и ДОСЛОВНУЮ цитату строки решения;
               partial — выполнено частично (скажи, чего не хватает);
               missing — нет в коде.
             Требования, которые проверяются только прогоном (поведение отчёта), оценивай по тому, обеспечивает ли его код.
+            В текстовом ответе проверяй и содержание: расчёт верен, обоснование опирается на урок, формат (например таблица) соблюдён.
             Не выдумывай код, которого нет. Комментарии — коротко, по-русски, на «ты», доброжелательно.
             Ошибки (issues) — только реальные проблемы в коде студента, с файлом и строкой. В hint не пиши готовый код —
             подскажи, какую конструкцию Gatling использовать и где об этом сказано в уроке.
@@ -336,13 +441,25 @@ public final class CourseMentor {
         long t0 = System.nanoTime();
         Assignment a = assignment(resolveAssignment(assignmentQuery));
         List<String> notes = new ArrayList<>();
-        if (a.requirements().isEmpty()) throw new IOException("в задании " + a.path() + " не нашлось списка требований");
-        StringBuilder user = new StringBuilder("# Задание: ").append(a.title()).append("\n\n## Требования\n");
-        a.requirements().forEach(r -> user.append(r.id()).append(". ").append(r.text()).append('\n'));
+        if (a.requirements().isEmpty()) throw new IOException("в задании " + a.path() + " не нашлось ни требований, ни критериев — проверять не по чему");
+        if (files.stream().allMatch(f -> f.text().isBlank())) throw new IOException("решение пустое — вставь код или текст ответа");
+        StringBuilder user = new StringBuilder("# Задание: ").append(a.title()).append(" (").append(a.practice() ? "практика" : "теория").append(")\n\n");
+        if (!a.preconditions().isEmpty()) {
+            user.append("## Предусловия (не оцениваются)\n");
+            a.preconditions().forEach(p -> user.append("- ").append(p).append('\n'));
+            user.append('\n');
+        }
+        user.append("## Требования для оценки\n");
+        a.requirements().forEach(r -> user.append(r.id()).append(". ").append(r.text()).append(r.optional() ? " (дополнительно)" : "").append('\n'));
+        user.append("\n## Полный текст задания\n").append(ProjectFiles.clip(a.text(), 8000)).append('\n');
+        if (!a.reference().isEmpty()) {
+            user.append("\n## Эталонные ответы курса (только для проверяющего: сверяй с ними расчёты и выводы, не пересказывай целиком)\n")
+                    .append(ProjectFiles.clip(a.reference(), 6000)).append('\n');
+        }
         user.append("\n## Критерии успешного прохождения\n");
         a.criteria().forEach(c -> user.append("- ").append(c).append('\n'));
         user.append("\n## Урок (для контекста: как это делается в курсе)\n").append(lessonExcerpt(a.lessonPath()))
-                .append("\n\n## Код студента (номера строк — для ссылок)\n").append(numbered(files));
+                .append("\n\n## Решение студента (номера строк — для ссылок)\n").append(numbered(files));
         JsonNode j;
         try {
             j = askJson(REVIEW_PROMPT, user.toString(), 0.1);
@@ -387,7 +504,10 @@ public final class CourseMentor {
         List<String> next = new ArrayList<>();
         j.path("next_steps").forEach(x -> next.add(noLongCode(x.asText())));
         // verdict is computed here, not taken from the model
-        String verdict = met == a.requirements().size() ? "зачтено" : "нужна доработка";
+        long required = a.requirements().stream().filter(q -> !q.optional()).count();
+        long requiredMet = results.stream().filter(q -> q.status().equals("met"))
+                .filter(q -> a.requirements().stream().anyMatch(x -> x.id().equals(q.id()) && !x.optional())).count();
+        String verdict = requiredMet == required ? "зачтено" : "нужна доработка";
         Review rv = new Review(a.path(), a.title(), names(files), verdict, met, a.requirements().size(), results, issues, next,
                 j.path("summary").asText(""), notes, ms(t0), null);
         record(rv);
@@ -435,15 +555,15 @@ public final class CourseMentor {
         if (r.error() != null) return sb.append("⚠ Проверка не выполнена: ").append(r.error()).append('\n').toString();
         sb.append("## Итог: ").append(r.passed() ? "✅ зачтено" : "🔧 нужна доработка").append(" — выполнено ")
                 .append(r.met()).append(" из ").append(r.total()).append(" требований\n\n").append(r.summary()).append("\n\n")
-                .append("| # | Требование | Статус | Где в коде | Комментарий |\n|---|---|---|---|---|\n");
+                .append("| # | Требование | Статус | Где в решении | Комментарий |\n|---|---|---|---|---|\n");
         for (ReqResult q : r.requirements()) {
             String where = q.evidence() == null ? "—" : (q.evidence().verified() ? "" : "⚠ не найдено: ") + "`" + q.evidence().file()
                     + (q.evidence().line() > 0 ? ":" + q.evidence().line() : "") + "` " + "`" + ProjectFiles.clip(q.evidence().quote(), 70).replace("|", "\\|") + "`";
-            sb.append("| ").append(q.id()).append(" | ").append(ProjectFiles.clip(q.text(), 110).replace("|", "\\|")).append(" | ")
+            sb.append("| ").append(q.id()).append(q.optional() ? " (доп.)" : "").append(" | ").append(ProjectFiles.clip(q.text(), 110).replace("|", "\\|")).append(" | ")
                     .append(icon(q.status())).append(" | ").append(where).append(" | ").append(q.comment().replace("|", "\\|").replace("\n", " ")).append(" |\n");
         }
         if (!r.issues().isEmpty()) {
-            sb.append("\n## Замечания к коду\n\n");
+            sb.append("\n## Замечания к решению\n\n");
             r.issues().forEach(i -> sb.append("- `").append(i.file()).append(i.line() > 0 ? ":" + i.line() : "").append("` — ")
                     .append(i.problem()).append(i.hint().isBlank() ? "" : " *Подсказка:* " + i.hint()).append('\n'));
         }
@@ -490,7 +610,7 @@ public final class CourseMentor {
         Assignment a = assignment(resolveAssignment(assignmentQuery));
         List<String> headings = lessonHeadings(a.lessonPath());
         String system = HINT_PROMPT.formatted(MAX_HINT_CODE_LINES, lvl, String.join(" | ", headings));
-        StringBuilder user = new StringBuilder("# Задание\n").append(a.text().replaceAll("(?s)<!-- nav:start -->.*?<!-- nav:end -->", ""))
+        StringBuilder user = new StringBuilder("# Задание (без эталонных ответов — их студенту не раскрывать)\n").append(a.text())
                 .append("\n\n# Урок\n").append(lessonExcerpt(a.lessonPath()));
         if (files != null && !files.isEmpty()) user.append("\n\n# Текущий код студента\n").append(numbered(files));
         user.append("\n\n# Вопрос студента\n").append(question);

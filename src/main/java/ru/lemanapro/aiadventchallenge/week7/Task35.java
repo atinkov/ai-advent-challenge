@@ -81,8 +81,10 @@ public final class Task35 {
         System.out.println("Курс: " + m.courseRoot());
         for (String p : m.assignmentPaths()) {
             CourseMentor.Assignment a = m.assignment(p);
-            System.out.println("\n" + p + "\n  урок: " + a.lessonPath() + "\n  требований: " + a.requirements().size() + ", критериев: " + a.criteria().size());
-            a.requirements().forEach(r -> System.out.println("    " + r.id() + ". " + ProjectFiles.clip(r.text(), 110)));
+            System.out.println("\n" + p + "\n  " + (a.practice() ? "практика" : "теория") + ", урок: " + a.lessonPath() + "\n  требований: "
+                    + a.requirements().size() + ", предусловий: " + a.preconditions().size() + ", критериев: " + a.criteria().size()
+                    + ", эталон: " + (a.reference().isEmpty() ? "нет" : a.reference().length() + " символов"));
+            a.requirements().forEach(r -> System.out.println("    " + r.id() + (r.optional() ? "*" : "") + ". " + ProjectFiles.clip(r.text(), 110)));
         }
     }
 
@@ -204,7 +206,9 @@ public final class Task35 {
         List<Map<String, Object>> as = new ArrayList<>();
         for (String p : m.assignmentPaths()) {
             CourseMentor.Assignment a = m.assignment(p);
-            as.add(Map.of("path", p, "title", p.substring(0, 2) + " · " + a.title(), "requirements", a.requirements().size()));
+            boolean practice = a.practice();
+            as.add(Map.of("path", p, "title", p.substring(0, 2) + " · " + a.title(), "requirements", a.requirements().size(),
+                    "kind", practice ? "практика: код" : "теория: ответ текстом"));
         }
         List<Map<String, Object>> ls = new ArrayList<>();
         for (String p : m.lessonPaths()) ls.add(Map.of("path", p, "title", p.substring(0, 2) + " · " + CourseMentor.titleOf(p)));

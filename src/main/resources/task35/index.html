@@ -50,7 +50,7 @@
       <select id="assignment"></select>
     </div>
     <div data-pane="review hint">
-      <label for="code">Код решения <span class="hint">— несколько файлов разделяй строкой <code>// FILE: AuthEndpoint.java</code></span></label>
+      <label for="code">Решение <span class="hint">— код (несколько файлов разделяй строкой <code>// FILE: AuthEndpoint.java</code>) или ответ текстом для теоретических заданий</span></label>
       <textarea id="code" spellcheck="false" placeholder="// FILE: AuthEndpoint.java&#10;public class AuthEndpoint { … }"></textarea>
     </div>
     <div data-pane="hint" hidden>
@@ -96,7 +96,9 @@ async function post(url, body) {
 }
 fetch('/api/meta').then(r => r.json()).then(m => {
   $('#model').textContent = '· модель ' + m.model;
-  for (const a of m.assignments) $('#assignment').add(new Option(a.title + ' (' + a.requirements + ' треб.)', a.path));
+  for (const a of m.assignments) $('#assignment').add(new Option(a.title + ' — ' + a.kind + ', ' + a.requirements + ' треб.', a.path));
+  const first = m.assignments.find(a => a.path.includes('12.1')) || m.assignments.find(a => a.kind.startsWith('практика'));
+  if (first) $('#assignment').value = first.path;
   for (const l of m.lessons) $('#lesson').add(new Option(l.title, l.path));
   $('#weak').textContent = m.weak.length ? 'Слабые места: ' + m.weak.join('; ') : '';
 });
