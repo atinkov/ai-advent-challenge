@@ -13,7 +13,7 @@
 | 4 | 16–20 | MCP: подключение, свой Git MCP-сервер, планировщик, композиция инструментов, оркестрация нескольких серверов | `week4` |
 | 5 | 21–25 | RAG: индексация, первый RAG-запрос, реранкинг, цитаты, чат с RAG и памятью задачи | `week5` |
 | 6 | 26–30 | локальная LLM (Ollama + Qwen): приложение, локальный RAG, оптимизация, приватный AI-сервис | `week6` |
-| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help`; автоматическое AI-ревью PR (GitHub Action); ассистент поддержки пользователей (CRM через MCP + RAG по FAQ); ассистент для работы с файлами проекта (MCP: чтение, поиск, анализ, правки → diff) | `week7` |
+| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help`; автоматическое AI-ревью PR (GitHub Action); ассистент поддержки пользователей (CRM через MCP + RAG по FAQ); ассистент для работы с файлами проекта (MCP: чтение, поиск, анализ, правки → diff); AI-наставник курса НТ: проверка ДЗ, подсказки, новые задачи | `week7` |
 
 ## Быстрый старт
 
@@ -99,12 +99,26 @@ mvn -q exec:java -Ptask34 -Dexec.args="--apply Сгенерируй CHANGELOG.md
 
 Подробно — [docs/files-assistant.md](docs/files-assistant.md).
 
+## AI-наставник курса НТ (день 35, реальная задача)
+
+Помогает учиться по курсу `lmru--qacc--performance-qa-course`: проверяет домашние задания (код Gatling) по требованиям
+из файла задания, даёт подсказки без готового решения и генерирует новые задачи по слабым местам ученика.
+LLM оценивает и пишет, код разбирает задание, проверяет цитаты из кода студента, считает вердикт и валидирует подсказки и задачи.
+
+```bash
+mvn -q compile exec:java -Ptask35                                       # веб-интерфейс http://localhost:8035
+mvn -q exec:java -Ptask35 -Dexec.args="review 12.1 ../my-gatling/src"  # проверка ДЗ
+mvn -q exec:java -Ptask35 -Dexec.args="check"                          # проверка задания дня → task35-mentor-report.md
+```
+
+Подробно — [docs/course-mentor.md](docs/course-mentor.md).
+
 ## Структура
 
 ```
 AIAdventChallenge/
 ├── .github/workflows/       ai-review.yml — AI-ревью на каждый pull request (день 32)
-├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task34
+├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task35
 ├── .env                     конфигурация LLM и ключ (gitignored)
 ├── README.md                этот файл
 ├── AGENTS.md                подробная база знаний проекта: каждый день, соглашения, команды
@@ -114,6 +128,7 @@ AIAdventChallenge/
 │   ├── code-review.md       автоматическое AI-ревью PR (день 32)
 │   ├── support-assistant.md ассистент поддержки пользователей (день 33)
 │   ├── files-assistant.md   ассистент для работы с файлами проекта (день 34)
+│   ├── course-mentor.md     AI-наставник курса НТ (день 35)
 │   ├── data-schemas.md      какие JSON-файлы пишет проект и их форматы
 │   ├── schemas/             JSON Schema файлов данных
 │   └── api/                 HTTP API (OpenAPI) и каталог MCP-инструментов
@@ -126,6 +141,9 @@ AIAdventChallenge/
 ├── src/main/resources/task33/  страница ассистента поддержки (день 33)
 ├── support/                 день 33: crm.json (пользователи и тикеты) + kb/ (FAQ и документация TaskFlow)
 ├── task34-output/           день 34: diff-ы сценариев ассистента по файлам (*.patch, git apply)
+├── mentor/samples/          день 35: решения студента для проверки наставника (верное и с ошибками)
+├── mentor-output/           день 35: progress.json, отчёты проверок ДЗ, сгенерированные задачи
+├── src/main/resources/task35/  страница наставника (день 35)
 └── taskN-*-report.md        отчёты, которые генерирует каждый день
 ```
 

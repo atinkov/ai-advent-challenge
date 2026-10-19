@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Наставник курса НТ</title>
+<style>
+  :root { --bg:#f6f5f1; --card:#fff; --ink:#1d1d1b; --muted:#6b6a64; --line:#e3e1d9; --accent:#2f5d50; --accent-ink:#fff; --warn:#9a4b1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161714; --card:#1f201c; --ink:#ecebe5; --muted:#a3a198; --line:#34352f; --accent:#7fb8a4; --accent-ink:#0f1a16; --warn:#e3a57a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding:20px 16px 8px; max-width:1100px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; } header p { margin:0; color:var(--muted); }
+  nav { display:flex; gap:6px; flex-wrap:wrap; max-width:1100px; margin:12px auto 0; padding:0 16px; }
+  nav button { border:1px solid var(--line); background:var(--card); color:var(--ink); padding:8px 14px; border-radius:999px; cursor:pointer; font:inherit; }
+  nav button.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  main { max-width:1100px; margin:12px auto 40px; padding:0 16px; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.2fr); gap:16px; }
+  @media (max-width:800px) { main { grid-template-columns:1fr; } }
+  section.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  select, textarea, input { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  textarea { min-height:260px; font:13px/1.45 ui-monospace, Menlo, monospace; }
+  textarea.short { min-height:80px; font:inherit; }
+  .go { margin-top:12px; background:var(--accent); color:var(--accent-ink); border:0; border-radius:8px; padding:10px 16px; font:inherit; cursor:pointer; }
+  .go:disabled { opacity:.5; cursor:wait; }
+  .hint { color:var(--muted); font-size:13px; }
+  #out { overflow-wrap:anywhere; } #out table { border-collapse:collapse; width:100%; font-size:13px; display:block; overflow-x:auto; }
+  #out th, #out td { border:1px solid var(--line); padding:4px 6px; vertical-align:top; text-align:left; }
+  #out code { font:12px ui-monospace, Menlo, monospace; background:var(--bg); padding:1px 4px; border-radius:4px; }
+  #out pre { background:var(--bg); padding:8px; border-radius:8px; overflow-x:auto; }
+  .weak { color:var(--warn); font-size:13px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Наставник курса НТ</h1>
+  <p>Проверка домашних заданий на Gatling, подсказки без готового решения и новые задачи по твоим слабым местам. <span id="model" class="hint"></span></p>
+</header>
+<nav>
+  <button data-tab="review" class="on">Проверить ДЗ</button>
+  <button data-tab="hint">Подсказка</button>
+  <button data-tab="task">Новая задача</button>
+  <button data-tab="progress">Прогресс</button>
+</nav>
+<main>
+  <section class="card">
+    <div data-pane="review hint">
+      <label for="assignment">Задание</label>
+      <select id="assignment"></select>
+    </div>
+    <div data-pane="review hint">
+      <label for="code">Решение <span class="hint">— код (несколько файлов разделяй строкой <code>// FILE: AuthEndpoint.java</code>) или ответ текстом для теоретических заданий</span></label>
+      <textarea id="code" spellcheck="false" placeholder="// FILE: AuthEndpoint.java&#10;public class AuthEndpoint { … }"></textarea>
+    </div>
+    <div data-pane="hint" hidden>
+      <label for="question">Вопрос</label>
+      <textarea id="question" class="short" placeholder="Где у меня ошибка? Как не считать 400 при снятии ошибкой?"></textarea>
+      <label for="level">Уровень подсказки</label>
+      <select id="level"><option value="1">1 — наводящий вопрос</option><option value="2">2 — какая конструкция и где в уроке</option><option value="3">3 — план решения</option></select>
+    </div>
+    <div data-pane="task" hidden>
+      <label for="lesson">Урок</label>
+      <select id="lesson"></select>
+      <label for="tlevel">Сложность</label>
+      <select id="tlevel"><option>лёгкий</option><option selected>средний</option><option>сложный</option></select>
+      <label for="focus">Что хочется потренировать <span class="hint">(пусто — по слабым местам из проверок)</span></label>
+      <textarea id="focus" class="short"></textarea>
+      <p id="weak" class="weak"></p>
+    </div>
+    <div data-pane="progress" hidden><p class="hint">История проверок, подсказок и задач хранится в <code>mentor-output/progress.json</code>.</p></div>
+    <button id="go" class="go">Проверить</button>
+  </section>
+  <section class="card"><div id="out" class="hint">Результат появится здесь. Проверка занимает 20–60 секунд.</div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let tab = 'review';
+const labels = { review: 'Проверить', hint: 'Получить подсказку', task: 'Сгенерировать задачу', progress: 'Показать' };
+function show(t) {
+  tab = t;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = !p.dataset.pane.split(' ').includes(t));
+  $('#go').textContent = labels[t];
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
+function render(md) {
+  const safe = String(md).replace(/</g, '&lt;');
+  $('#out').innerHTML = window.marked ? marked.parse(safe) : '<pre>' + safe + '</pre>';
+  $('#out').classList.remove('hint');
+}
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  return r.json();
+}
+fetch('/api/meta').then(r => r.json()).then(m => {
+  $('#model').textContent = '· модель ' + m.model;
+  for (const a of m.assignments) $('#assignment').add(new Option(a.title + ' — ' + a.kind + ', ' + a.requirements + ' треб.', a.path));
+  const first = m.assignments.find(a => a.path.includes('12.1')) || m.assignments.find(a => a.kind.startsWith('практика'));
+  if (first) $('#assignment').value = first.path;
+  for (const l of m.lessons) $('#lesson').add(new Option(l.title, l.path));
+  $('#weak').textContent = m.weak.length ? 'Слабые места: ' + m.weak.join('; ') : '';
+});
+$('#go').onclick = async () => {
+  const btn = $('#go'); btn.disabled = true; render('_Наставник думает…_');
+  try {
+    let res;
+    if (tab === 'review') res = await post('/api/review', { assignment: $('#assignment').value, code: $('#code').value });
+    if (tab === 'hint') res = await post('/api/hint', { assignment: $('#assignment').value, code: $('#code').value, question: $('#question').value, level: +$('#level').value });
+    if (tab === 'task') {
+      res = await post('/api/task', { lesson: $('#lesson').value, level: $('#tlevel').value, focus: $('#focus').value });
+      if (res.problems && res.problems.length) res.markdown += '\n\n> ⚠ ' + res.problems.join('; ');
+      if (res.file) res.markdown += '\n\n_Сохранено: ' + res.file + '_';
+    }
+    if (tab === 'progress') res = await (await fetch('/api/progress')).json();
+    render(res.markdown);
+  } catch (e) { render('⚠ ' + e); }
+  btn.disabled = false;
+};
+</script>
+</body>
+</html>
