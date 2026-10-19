@@ -121,6 +121,15 @@ public final class LlmClient {
      */
     public static JsonNode sendWithTools(HttpClient client, Config cfg, List<Map<String, Object>> messages,
                                          List<Map<String, Object>> tools, Double temperature) throws Exception {
+        return sendWithTools(client, cfg, messages, tools, temperature, null);
+    }
+
+    /**
+     * Same, plus extra top-level request fields (day 34), e.g. {"chat_template_kwargs": {"enable_thinking": false}}
+     * for a vLLM-served Qwen3. null/empty = nothing extra.
+     */
+    public static JsonNode sendWithTools(HttpClient client, Config cfg, List<Map<String, Object>> messages,
+                                         List<Map<String, Object>> tools, Double temperature, Map<String, Object> extra) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.model());
         body.put("messages", messages);
@@ -131,7 +140,19 @@ public final class LlmClient {
         if (temperature != null) {
             body.put("temperature", temperature);
         }
+        if (extra != null) {
+            body.putAll(extra);
+        }
         return post(client, cfg, body);
+    }
+
+    /** LLM_TIMEOUT_SECONDS (env / .env), default 120 — one chat request; long tool dialogues of a reasoning model may need more. */
+    static long requestTimeoutSeconds() {
+        try {
+            return Math.max(10, Long.parseLong(env("LLM_TIMEOUT_SECONDS", "120").strip()));
+        } catch (NumberFormatException e) {
+            return 120;
+        }
     }
 
     private static JsonNode post(HttpClient client, Config cfg, Map<String, Object> body) throws Exception {
@@ -141,7 +162,7 @@ public final class LlmClient {
     private static JsonNode postTo(HttpClient client, Config cfg, String path, Map<String, Object> body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cfg.baseUrl().replaceAll("/+$", "") + path))
-                .timeout(Duration.ofMinutes(2))
+                .timeout(Duration.ofSeconds(requestTimeoutSeconds()))
                 .header("Authorization", "Bearer " + cfg.apiKey())
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))

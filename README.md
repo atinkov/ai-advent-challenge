@@ -13,7 +13,7 @@
 | 4 | 16–20 | MCP: подключение, свой Git MCP-сервер, планировщик, композиция инструментов, оркестрация нескольких серверов | `week4` |
 | 5 | 21–25 | RAG: индексация, первый RAG-запрос, реранкинг, цитаты, чат с RAG и памятью задачи | `week5` |
 | 6 | 26–30 | локальная LLM (Ollama + Qwen): приложение, локальный RAG, оптимизация, приватный AI-сервис | `week6` |
-| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help`; автоматическое AI-ревью PR (GitHub Action); ассистент поддержки пользователей (CRM через MCP + RAG по FAQ) | `week7` |
+| 7 | 31– | ассистент разработчика: RAG по документации + MCP к репозиторию, команда `/help`; автоматическое AI-ревью PR (GitHub Action); ассистент поддержки пользователей (CRM через MCP + RAG по FAQ); ассистент для работы с файлами проекта (MCP: чтение, поиск, анализ, правки → diff) | `week7` |
 
 ## Быстрый старт
 
@@ -83,12 +83,28 @@ mvn -q exec:java -Ptask33 -Dexec.args="check"      # проверка задан
 
 Подробно — [docs/support-assistant.md](docs/support-assistant.md).
 
+## Ассистент для работы с файлами проекта (день 34)
+
+Цель словами → ассистент сам выбирает файлы и работает с ними через MCP-сервер `project-files-mcp-server`
+(`list_files`, `read_file`, `search`, `check_links`, `git_log`, `write_file`, `edit_file`, `pending_changes`) → ответ + unified diff.
+По умолчанию проект — репозиторий курса `../lmru--qacc--performance-qa-course` (другой — `TASK34_ROOT` или `--root`).
+Изменения по умолчанию только в diff (`task34-output/*.patch`, применяется `git apply`), с `--apply` — запись прямо в файлы.
+
+```bash
+mvn -q compile exec:java -Ptask34                                                # 4 сценария + проверки → task34-files-assistant-report.md
+mvn -q exec:java -Ptask34 -Dexec.args="chat"                                    # интерактивный режим
+mvn -q exec:java -Ptask34 -Dexec.args="Найди все места, где используется feed"  # одна цель (dry-run)
+mvn -q exec:java -Ptask34 -Dexec.args="--apply Сгенерируй CHANGELOG.md по истории git"
+```
+
+Подробно — [docs/files-assistant.md](docs/files-assistant.md).
+
 ## Структура
 
 ```
 AIAdventChallenge/
 ├── .github/workflows/       ai-review.yml — AI-ревью на каждый pull request (день 32)
-├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task33
+├── pom.xml                  Java 25; jackson-databind, MCP Java SDK 2.0.1, slf4j-nop; профили task1…task34
 ├── .env                     конфигурация LLM и ключ (gitignored)
 ├── README.md                этот файл
 ├── AGENTS.md                подробная база знаний проекта: каждый день, соглашения, команды
@@ -97,6 +113,7 @@ AIAdventChallenge/
 │   ├── dev-assistant.md     ассистент разработчика (день 31)
 │   ├── code-review.md       автоматическое AI-ревью PR (день 32)
 │   ├── support-assistant.md ассистент поддержки пользователей (день 33)
+│   ├── files-assistant.md   ассистент для работы с файлами проекта (день 34)
 │   ├── data-schemas.md      какие JSON-файлы пишет проект и их форматы
 │   ├── schemas/             JSON Schema файлов данных
 │   └── api/                 HTTP API (OpenAPI) и каталог MCP-инструментов
@@ -108,6 +125,7 @@ AIAdventChallenge/
 ├── src/main/resources/task27/  веб-интерфейс дня 27
 ├── src/main/resources/task33/  страница ассистента поддержки (день 33)
 ├── support/                 день 33: crm.json (пользователи и тикеты) + kb/ (FAQ и документация TaskFlow)
+├── task34-output/           день 34: diff-ы сценариев ассистента по файлам (*.patch, git apply)
 └── taskN-*-report.md        отчёты, которые генерирует каждый день
 ```
 

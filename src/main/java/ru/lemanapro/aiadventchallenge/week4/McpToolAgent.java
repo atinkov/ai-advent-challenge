@@ -77,6 +77,7 @@ public final class McpToolAgent implements AutoCloseable {
     private final boolean autoMode;
     private Mode mode;
     private int maxToolSteps = MAX_TOOL_STEPS;
+    private Map<String, Object> extraBody;
 
     /** One MCP server (days 17-19). */
     public McpToolAgent(LlmClient.Config cfg, McpSyncClient mcp, String modeSetting, String basePrompt) {
@@ -105,6 +106,12 @@ public final class McpToolAgent implements AutoCloseable {
 
     public McpToolAgent maxToolSteps(int n) {
         this.maxToolSteps = n;
+        return this;
+    }
+
+    /** Extra top-level fields for every chat request (day 34: thinking switch of a vLLM Qwen3); null = none. */
+    public McpToolAgent extraBody(Map<String, Object> extra) {
+        this.extraBody = extra;
         return this;
     }
 
@@ -144,23 +151,23 @@ public final class McpToolAgent implements AutoCloseable {
     }
 
     /** A dialogue that keeps its history (including tool calls and results) across asks. */
-    Conversation conversation() {
+    public Conversation conversation() {
         return new Conversation();
     }
 
-    final class Conversation {
+    public final class Conversation {
         private final List<Map<String, Object>> messages = new ArrayList<>();
 
         private Conversation() {
             messages.add(msg("system", systemPrompt()));
         }
 
-        AgentAnswer ask(String question) throws Exception {
+        public AgentAnswer ask(String question) throws Exception {
             messages.add(msg("user", question));
             return run(messages);
         }
 
-        int size() {
+        public int size() {
             return messages.size();
         }
     }
@@ -173,7 +180,7 @@ public final class McpToolAgent implements AutoCloseable {
             JsonNode response;
             try {
                 requests++;
-                response = LlmClient.sendWithTools(http, cfg, messages, mode == Mode.NATIVE ? openAiTools : null, 0.2);
+                response = LlmClient.sendWithTools(http, cfg, messages, mode == Mode.NATIVE ? openAiTools : null, 0.2, extraBody);
             } catch (LlmClient.RequestException e) {
                 if (autoMode && mode == Mode.NATIVE && e.status() >= 400 && e.status() < 500) {
                     System.out.println("   [агент] сервер LLM отклонил параметр tools (HTTP " + e.status()

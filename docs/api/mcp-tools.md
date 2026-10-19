@@ -10,6 +10,22 @@
 | docs pipeline | `week4/Task19.DocsPipelineMcpServer` | 19, 20 | `search_docs`, `summarize`, `save_to_file` |
 | `project-mcp-server` | `week7/ProjectMcpServer` | 31 | `git_current_branch`, `git_status`, `list_files`, `git_diff` |
 
+## project-files-mcp-server (день 34, ассистент по файлам проекта)
+
+`week7/ProjectFilesMcpServer <корень> [--apply]`. Пути — от корня проекта; `.git`, `.idea`, `target`, `node_modules`, `.env` недоступны.
+В dry-run изменения живут в памяти процесса сервера (одна сессия ассистента), чтение и поиск их видят.
+
+| Инструмент | Параметры | Смысл |
+|---|---|---|
+| `list_files` | `glob` | файлы проекта, размер, число строк |
+| `read_file` | `path`*, `start_line`, `end_line` | текст с номерами строк (до 250 строк) |
+| `search` | `query`*, `regex`, `glob`, `case_sensitive`, `files_without`, `max_results` (80) | поиск по всем текстовым файлам; `files_without` — где запроса нет |
+| `check_links` | `glob` | битые относительные ссылки Markdown и файлы без входящих ссылок |
+| `git_log` | `limit` (50), `path`, `with_files` | история git, только чтение |
+| `write_file` | `path`*, `content`* | создать / перезаписать файл → diff |
+| `edit_file` | `path`*, `old_text`*, `new_text`*, `replace_all` | точечная замена → diff |
+| `pending_changes` | — | все изменения сессии: сводка + unified diff (`structuredContent.contents` — итоговые тексты, для хоста) |
+
 ## project-mcp-server (день 31, ассистент разработчика)
 
 Только чтение рабочей копии: `git` с `GIT_OPTIONAL_LOCKS=0`, пути — только относительные внутри репозитория (без `..`, `/…`, `-…`), ref проверяется регуляркой.
