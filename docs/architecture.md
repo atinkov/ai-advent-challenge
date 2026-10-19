@@ -34,6 +34,7 @@ UI / сценарий      weekN/TaskN.java         — main(), CLI или HTTP-
 | `week6/OllamaClient` | нативный API Ollama: версии, модели, `/api/chat` со стримингом и метриками | дни 26–30 |
 | `week7/ProjectDocs` | RAG-корпус по путям (документация и/или код) с индексом и автопересборкой по sha256; поиск с фильтром по источнику | дни 31–32 |
 | `week7/ProjectFiles` | песочница над файлами проекта: список, чтение, поиск, анализ Markdown-ссылок, git log; изменения в оверлее → unified diff (`git apply`) | день 34 |
+| `week7/CourseMentor` | наставник курса: разбор заданий на требования, проверка ДЗ с проверкой цитат и вердиктом в коде, подсказки без решения, генерация задач с валидацией, прогресс ученика | день 35 |
 | `week7/CodeReviewer` | ревью PR: diff `base...head` + изменённые файлы → RAG по документации и коду → LLM (JSON) → проверка замечаний → Markdown-комментарий | день 32 |
 
 ## Пакеты по неделям
@@ -44,7 +45,7 @@ UI / сценарий      weekN/TaskN.java         — main(), CLI или HTTP-
 - `week4` — дни 16–20, MCP: клиент на официальном MCP Java SDK, собственные stdio-серверы (`GitMcpServer`, `SchedulerMcpServer`, `DocsPipelineMcpServer`).
 - `week5` — дни 21–25, RAG по самому проекту.
 - `week6` — дни 26–30, локальная LLM: приложение «Наставник НТ» (порт 8027), приватный AI-сервис (порт 8030).
-- `week7` — день 31+: ассистент разработчика (`ProjectMcpServer`, `ProjectDocs`, `DevAssistant`, `Task31`) AI-ревью PR (`CodeReviewer`, `Task32` + `.github/workflows/ai-review.yml`) ассистент поддержки (`CrmMcpServer`, `SupportKnowledge`, `SupportAssistant`, `Task33`) и ассистент по файлам проекта (`ProjectFiles`, `ProjectFilesMcpServer`, `FilesAssistant`, `Task34`).
+- `week7` — день 31+: ассистент разработчика (`ProjectMcpServer`, `ProjectDocs`, `DevAssistant`, `Task31`) AI-ревью PR (`CodeReviewer`, `Task32` + `.github/workflows/ai-review.yml`) ассистент поддержки (`CrmMcpServer`, `SupportKnowledge`, `SupportAssistant`, `Task33`) ассистент по файлам проекта (`ProjectFiles`, `ProjectFilesMcpServer`, `FilesAssistant`, `Task34`) и AI-наставник курса (`CourseMentor`, `Task35`).
 
 ## Поток данных ассистента разработчика (день 31)
 
